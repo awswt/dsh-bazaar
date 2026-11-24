@@ -1,0 +1,1503 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-bazaar 交互原型 · 屏 A 设置页 / 屏 B 会话辅助面板</title>
+<style>
+/* ── 视觉令牌 ───────────────────────────────────────────────────────────────
+   唯一设计基准是仓库根目录 DESIGN.md。本原型独立双击打开，故每个令牌都是
+   `var(宿主令牌, DESIGN.md 登记值)` 的形式：在宿主里自动跟随主题，独立打开时
+   用兜底值呈现同一套视觉。落地实现直接用宿主令牌，不再经 --bz-* 中转。
+   详见文末「设计系统对齐」。                                            */
+:root{
+  --bz-font: system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  --bz-mono: ui-monospace,SFMono-Regular,Consolas,"Courier New",monospace;
+  /* 颜色：DESIGN.md Colors 段登记值，优先取宿主 --dsw-* 令牌，插件侧不自造色板 */
+  --bz-bg: var(--dsw-static-neutral-bluish-50,#f9fafb);
+  --bz-surface: var(--dsw-alias-bg-layer-1,#ffffff);
+  --bz-surface-2: var(--dsw-static-neutral-bluish-55,#f5f7fa);
+  --bz-surface-3: var(--dsw-static-neutral-bluish-100,#ebeef2);
+  --bz-text: var(--dsw-alias-label-primary,#0f1115);
+  --bz-text-dim: var(--dsw-alias-label-secondary,#61666b);
+  /* 三级文字与二级同色：层级由字号与角色承担，不靠更浅的灰 */
+  --bz-text-faint: var(--dsw-alias-label-secondary,#61666b);
+  --bz-border: var(--dsw-static-neutral-bluish-200,#e1e5ee);
+  --bz-border-strong: var(--dsw-static-neutral-bluish-300,#cfd3d6);
+  --bz-primary: var(--dsw-alias-label-primary,#0f1115);
+  --bz-primary-soft: var(--dsw-static-neutral-bluish-50,#f9fafb);
+  /* 状态色：深字浅底，对比度 10.98–14.30:1（DESIGN.md Colors 段结论） */
+  --bz-error: #570c0c; --bz-error-surface:#fef2f2;
+  --bz-success: #233c2c; --bz-success-surface:#e6faed;
+  --bz-warning: #27241f; --bz-warning-surface:#fef5e7;
+  --bz-mask: var(--dsw-alias-bg-mask-1,#0000003d);
+  /* 圆角：DESIGN.md rounded 刻度 */
+  --bz-radius-xs:5px; --bz-radius-sm:8px; --bz-radius:12px; --bz-radius-full:999px;
+}
+[data-theme="dark"]{
+  --bz-bg: var(--dsw-static-neutral-bluish-950,#151517);
+  --bz-surface: var(--dsw-alias-bg-layer-1,#232324);
+  --bz-surface-2: var(--dsw-alias-bg-layer-2,#2c2c2e);
+  --bz-surface-3: var(--dsw-static-neutral-bluish-800,#353638);
+  --bz-text: var(--dsw-static-neutral-bluish-50,#f9fafb);
+  --bz-text-dim: var(--dsw-static-neutral-bluish-300,#cfd3d6);
+  --bz-text-faint: var(--dsw-static-neutral-bluish-300,#cfd3d6);
+  --bz-border: var(--dsw-static-neutral-bluish-800,#353638);
+  --bz-border-strong: var(--dsw-static-neutral-bluish-750,#43454a);
+  --bz-primary: var(--dsw-static-neutral-bluish-50,#f9fafb);
+  --bz-primary-soft: var(--dsw-alias-bg-layer-2,#2c2c2e);
+  --bz-error: #fee2e2; --bz-error-surface:#570c0c;
+  --bz-success: #e6faed; --bz-success-surface:#233c2c;
+  --bz-warning: #fef5e7; --bz-warning-surface:#27241f;
+  --bz-mask: var(--dsw-alias-bg-mask-1,#00000080);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bz-bg); color:var(--bz-text);
+  font-family:var(--bz-font); font-size:13px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.bz-wrap{max-width:1120px;margin:0 auto;padding:24px 16px 24px}
+code,.bz-mono{font-family:var(--bz-mono);font-size:12px}
+code{background:var(--bz-surface-2);border:1px solid var(--bz-border);border-radius:5px;padding:0 4px}
+
+/* ── 页头 ─────────────────────────────────────────────────────────────── */
+.bz-header{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:24px}
+.bz-header h1{font-size:16px;line-height:1.35;margin:0 0 6px}
+.bz-header p{margin:0;color:var(--bz-text-dim);max-width:720px}
+.bz-theme{display:flex;gap:8px;align-items:center;flex:none}
+.bz-theme span{font-size:12px;color:var(--bz-text-dim)}
+
+/* ── 通用控件 ─────────────────────────────────────────────────────────── */
+.bz-btn{
+  font:inherit;font-size:13px;line-height:1.4;padding:6px 12px;border-radius:var(--bz-radius-sm);
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface);color:var(--bz-text);
+  cursor:pointer;transition:background .12s,border-color .12s;
+}
+.bz-btn:hover:not(:disabled){background:var(--bz-surface-2)}
+.bz-btn--primary{background:var(--bz-primary);border-color:var(--bz-primary);color:var(--bz-surface)}
+.bz-btn--primary:hover:not(:disabled){background:var(--bz-text-dim);border-color:var(--bz-text-dim)}
+.bz-btn--danger{background:var(--bz-error-surface);border-color:var(--bz-error);color:var(--bz-error)}
+.bz-btn--ghost{background:transparent;border-color:transparent;color:var(--bz-primary);text-decoration:underline;text-underline-offset:3px}
+.bz-btn--sm{font-size:12px;padding:4px 10px}
+.bz-btn:disabled{cursor:not-allowed;opacity:.55;background:var(--bz-surface-3);border-color:var(--bz-border);color:var(--bz-text-faint)}
+.bz-btn:focus-visible,.bz-tab:focus-visible,.bz-switch input:focus-visible{outline:2px solid var(--bz-primary);outline-offset:2px}
+
+/* ── 徽标：状态永远带文字，不靠颜色 ───────────────────────────────────── */
+.bz-tag{
+  display:inline-flex;align-items:center;gap:4px;flex:none;
+  font-size:11px;line-height:1.6;padding:0 6px;border-radius:999px;white-space:nowrap;
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface-2);color:var(--bz-text-dim);
+}
+.bz-tag--req{border-color:var(--bz-error);background:var(--bz-error-surface);color:var(--bz-error)}
+.bz-tag--disabled{border-style:dashed;color:var(--bz-text-faint)}
+.bz-tag--optional{border-color:var(--bz-border-strong);background:transparent;color:var(--bz-text-dim)}
+.bz-tag--readonly{border-color:var(--bz-border-strong);background:transparent;color:var(--bz-text-dim)}
+.bz-tag--empty{border-color:var(--bz-border-strong);background:var(--bz-surface-3);color:var(--bz-text-dim)}
+.bz-tag--loading{border-color:var(--bz-primary);background:var(--bz-primary-soft);color:var(--bz-primary)}
+.bz-tag--error{border-color:var(--bz-error);background:var(--bz-error-surface);color:var(--bz-error)}
+.bz-tag--ok{border-color:var(--bz-success);background:var(--bz-success-surface);color:var(--bz-success)}
+.bz-tag--warn{border-color:var(--bz-warning);background:var(--bz-warning-surface);color:var(--bz-warning)}
+.bz-tag--danger{border-color:var(--bz-error);background:var(--bz-error-surface);color:var(--bz-error);font-weight:600}
+
+/* ── 文档区块（原型自带的六段说明） ───────────────────────────────────── */
+.bz-doc{
+  background:var(--bz-surface);border:1px solid var(--bz-border);border-radius:var(--bz-radius);
+  padding:16px;margin-bottom:24px;
+}
+.bz-doc h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bz-doc h2 .bz-idx{
+  font-family:var(--bz-mono);font-size:11px;color:var(--bz-text-faint);
+  border:1px solid var(--bz-border);border-radius:5px;padding:0 6px;
+}
+.bz-doc > p{margin:6px 0 12px;color:var(--bz-text-dim)}
+.bz-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.bz-doc ul{margin:8px 0 0;padding-left:16px;color:var(--bz-text-dim)}
+.bz-doc li{margin:4px 0}
+.bz-doc strong{color:var(--bz-text)}
+
+.bz-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+.bz-table caption{text-align:left;font-size:12px;color:var(--bz-text-faint);padding-bottom:6px}
+.bz-table th,.bz-table td{border:1px solid var(--bz-border);padding:8px 10px;text-align:left;vertical-align:top}
+.bz-table th{background:var(--bz-surface-2);font-weight:600;font-size:12px;color:var(--bz-text-dim)}
+.bz-table td code{white-space:nowrap}
+
+/* ── 原型窗口外壳 ─────────────────────────────────────────────────────── */
+.bz-mock{
+  border:1px solid var(--bz-border);border-radius:var(--bz-radius);overflow:hidden;
+  background:var(--bz-surface);margin-bottom:24px;
+}
+.bz-mock-chrome{
+  display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:var(--bz-surface-2);border-bottom:1px solid var(--bz-border);
+}
+.bz-dot{width:9px;height:9px;border-radius:50%;background:var(--bz-border-strong)}
+.bz-mock-chrome .bz-title{font-size:12px;color:var(--bz-text-dim);margin-left:4px}
+.bz-mock-chrome .bz-spacer{flex:1}
+.bz-mock-body{padding:16px}
+.bz-caption{
+  margin:-8px 0 24px;padding:12px 16px;border-left:3px solid var(--bz-primary);
+  background:var(--bz-surface-2);border-radius:0 var(--bz-radius-sm) var(--bz-radius-sm) 0;
+  font-size:13px;color:var(--bz-text-dim);
+}
+.bz-caption b{color:var(--bz-text)}
+
+/* ── 屏 A：设置页 ─────────────────────────────────────────────────────── */
+.bz-settings{max-width:820px;margin:0 auto}
+.bz-settings-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.bz-settings-head h3{margin:0;font-size:16px}
+.bz-banner{
+  display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:var(--bz-radius-sm);
+  border:1px solid var(--bz-border);background:var(--bz-surface-2);margin-bottom:16px;
+}
+.bz-banner--empty{border-style:dashed;border-color:var(--bz-border-strong)}
+.bz-banner--warn{border-color:var(--bz-warning);background:var(--bz-warning-surface)}
+.bz-banner p{margin:4px 0 0;font-size:13px;color:var(--bz-text-dim)}
+.bz-banner b{font-size:13px}
+
+.bz-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:6px;background:var(--bz-surface-2);border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm)}
+.bz-tab{
+  font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:6px;
+  padding:6px 12px;border-radius:var(--bz-radius-sm);border:1px solid transparent;
+  background:transparent;color:var(--bz-text-dim);cursor:pointer;
+}
+.bz-tab:hover{background:var(--bz-surface)}
+.bz-tab[aria-selected="true"]{background:var(--bz-surface);border-color:var(--bz-border-strong);border-bottom:2px solid var(--bz-primary);color:var(--bz-text);font-weight:600}
+.bz-tab--error[aria-selected="true"]{border-color:var(--bz-error);color:var(--bz-error)}
+.bz-tab-avatar{
+  width:18px;height:18px;flex:none;border-radius:5px;display:grid;place-items:center;
+  font-size:11px;font-family:var(--bz-mono);background:var(--bz-surface-3);color:var(--bz-text-dim);
+}
+.bz-tab[aria-selected="true"] .bz-tab-avatar{background:var(--bz-primary-soft);color:var(--bz-primary)}
+
+.bz-card{
+  border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm);
+  background:var(--bz-surface);margin-top:12px;overflow:hidden;
+}
+.bz-card-head{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+  padding:10px 12px;border-bottom:1px solid var(--bz-border);background:var(--bz-surface-2);
+}
+.bz-card-head h4{margin:0;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bz-card-body{padding:4px 12px 12px}
+.bz-field{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-start;padding:12px 0;border-bottom:1px dashed var(--bz-border)}
+.bz-field:last-child{border-bottom:0}
+.bz-field--invalid{border-left:2px solid var(--bz-error);padding-left:8px;background:var(--bz-error-surface)}
+.bz-field-label{flex:0 0 132px;font-size:13px;color:var(--bz-text-dim);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.bz-field-value{flex:1 1 320px;min-width:240px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bz-field-hint{flex:1 1 100%;font-size:12px;color:var(--bz-text-faint);margin:4px 0 0 0}
+.bz-field-hint--error{color:var(--bz-error);display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.bz-val{font-size:13px}
+.bz-mask{font-family:var(--bz-mono);font-size:13px;letter-spacing:1px}
+.bz-state-block{
+  padding:12px;border:1px dashed var(--bz-border-strong);border-radius:var(--bz-radius-sm);
+  background:var(--bz-surface-2);margin-top:12px;font-size:13px;color:var(--bz-text-dim);
+}
+.bz-state-block b{color:var(--bz-text)}
+.bz-state-block--error{border-style:solid;border-color:var(--bz-error);background:var(--bz-error-surface);color:var(--bz-text)}
+.bz-state-block--loading{border-style:solid;border-color:var(--bz-border-strong);background:var(--bz-surface-2)}
+.bz-state-block .bz-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
+.bz-skel{height:10px;border-radius:var(--bz-radius-xs);background:var(--bz-surface-3);margin:8px 0}
+.bz-skel--w60{width:60%} .bz-skel--w80{width:80%} .bz-skel--w40{width:40%}
+.bz-list{margin:0;padding:0;list-style:none}
+.bz-list li{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--bz-border);font-size:13px}
+.bz-list li:last-child{border-bottom:0}
+.bz-note{font-size:12px;color:var(--bz-text-faint)}
+
+/* ── 屏 B：会话辅助面板 ───────────────────────────────────────────────── */
+.bz-panel{border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm);overflow:hidden}
+.bz-panel-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bz-border)}
+.bz-panel-head h3{margin:0;font-size:16px}
+.bz-panel-section{padding:12px 16px;border-bottom:1px solid var(--bz-border)}
+.bz-panel-section:last-child{border-bottom:0}
+.bz-panel-section h4{margin:0 0 10px;font-size:13px;color:var(--bz-text-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+.bz-switches{display:flex;flex-wrap:wrap;gap:8px}
+.bz-switch{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface);cursor:pointer;font-size:13px;
+  user-select:none;
+}
+.bz-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.bz-switch .bz-knob{
+  width:26px;height:15px;border-radius:999px;background:var(--bz-surface-3);position:relative;flex:none;
+  transition:background .15s;
+}
+.bz-switch .bz-knob::after{
+  content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+  background:var(--bz-surface);border:1px solid var(--bz-border-strong);transition:transform .15s;
+}
+.bz-switch input:checked + .bz-knob{background:var(--bz-primary)}
+.bz-switch input:checked + .bz-knob::after{transform:translateX(11px)}
+.bz-switch input:focus-visible + .bz-knob{outline:2px solid var(--bz-primary);outline-offset:2px}
+.bz-switch:has(input:checked){border-color:var(--bz-primary);background:var(--bz-primary-soft)}
+.bz-switch b{font-weight:600}
+
+.bz-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start}
+.bz-group{border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm);background:var(--bz-surface);overflow:hidden}
+.bz-group--error{border-color:var(--bz-error)}
+.bz-group-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bz-surface-2);border-bottom:1px solid var(--bz-border)}
+.bz-group-head .bz-gname{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bz-group-body{padding:10px 12px 12px}
+.bz-group-body--error{background:var(--bz-error-surface)}
+.bz-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.bz-input{
+  font:inherit;font-size:13px;padding:6px 10px;border-radius:var(--bz-radius-sm);
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface);color:var(--bz-text);
+  min-width:0;flex:1 1 130px;
+}
+.bz-input:disabled{background:var(--bz-surface-3);color:var(--bz-text-faint);cursor:not-allowed}
+.bz-select{
+  font:inherit;font-size:13px;padding:6px 10px;border-radius:var(--bz-radius-sm);
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface);color:var(--bz-text);
+  min-width:0;flex:0 1 260px;
+}
+.bz-select:focus-visible{outline:2px solid var(--bz-primary);outline-offset:2px}
+.bz-select[aria-invalid="true"]{border-color:var(--bz-error);background:var(--bz-error-surface)}
+.bz-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.bz-chip{
+  font:inherit;font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--bz-border-strong);background:var(--bz-surface);color:var(--bz-text-dim);
+}
+.bz-chip[aria-pressed="true"]{border-color:var(--bz-primary);background:var(--bz-primary-soft);color:var(--bz-primary);font-weight:600}
+
+.bz-entry{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;justify-content:space-between;
+  padding:8px;border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm);
+  background:var(--bz-surface);margin-bottom:8px;
+}
+.bz-entry:last-child{margin-bottom:0}
+.bz-entry-name{font-size:13px;font-weight:600;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bz-entry-desc{font-size:12px;color:var(--bz-text-dim);margin:4px 0 0}
+.bz-entry-side{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+.bz-skillwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.bz-skillcol{border:1px solid var(--bz-border);border-radius:var(--bz-radius-sm);background:var(--bz-surface);overflow:hidden}
+.bz-skillcol-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bz-surface-2);border-bottom:1px solid var(--bz-border);font-size:13px;font-weight:600}
+.bz-skillcol-body{padding:10px 12px 12px}
+
+.bz-empty{
+  border:1px dashed var(--bz-border-strong);border-radius:var(--bz-radius-sm);
+  background:var(--bz-surface-2);padding:24px 16px;text-align:center;
+}
+.bz-empty h4{margin:0 0 6px;font-size:14px}
+.bz-empty p{margin:0 0 12px;font-size:13px;color:var(--bz-text-dim)}
+
+/* ── 二次确认弹窗 ─────────────────────────────────────────────────────── */
+.bz-modal[hidden]{display:none}
+.bz-modal{
+  position:fixed;inset:0;z-index:40;display:grid;place-items:center;
+  background:var(--bz-mask);padding:16px;
+}
+.bz-modal-card{
+  width:100%;max-width:420px;background:var(--bz-surface);border:1px solid var(--bz-border-strong);
+  border-radius:var(--bz-radius);padding:16px;
+}
+.bz-modal-card h4{margin:0 0 8px;font-size:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bz-modal-card p{margin:0 0 16px;font-size:13px;color:var(--bz-text-dim)}
+.bz-modal-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+
+/* ── 反馈条 ───────────────────────────────────────────────────────────── */
+.bz-toast{
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;
+  border:1px solid var(--bz-success);background:var(--bz-success-surface);color:var(--bz-success);
+  border-radius:var(--bz-radius-sm);padding:4px 10px;margin-top:10px;
+}
+.bz-toast[hidden]{display:none}
+
+.bz-legend{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:10px;font-size:12px;color:var(--bz-text-dim)}
+.bz-legend > span{display:inline-flex;gap:6px;align-items:center}
+.bz-check{display:flex;gap:8px;align-items:flex-start;padding:6px 0;font-size:13px}
+.bz-check input{margin-top:4px}
+</style>
+</head>
+<body>
+<div class="bz-wrap">
+
+  <!-- ── 页头 ───────────────────────────────────────────────────────── -->
+  <header class="bz-header">
+    <div>
+      <h1>dsh-bazaar 交互原型 · 屏 A 设置页 / 屏 B 会话辅助面板</h1>
+      <p>
+        对应 OpenSpec 变更 <code>migrate-to-dsh-bazaar</code>。单文件、无外部资源，双击即可打开；
+        所有状态标注都以文字或徽标呈现，不只依赖颜色。
+      </p>
+    </div>
+    <div class="bz-theme">
+      <span id="themeLabel">当前：浅色</span>
+      <button class="bz-btn" id="themeToggle" type="button">切换深色/浅色</button>
+    </div>
+  </header>
+
+  <!-- ── 状态说明（本原型自带） ─────────────────────────────────────── -->
+  <section class="bz-doc" id="legend" aria-labelledby="legend-h">
+    <h2 id="legend-h">状态说明 <span class="bz-idx">先读这里</span></h2>
+    <p>本原型覆盖下列状态与交互。<strong>可点项</strong>均已接上真实脚本逻辑，点击后会有可见变化；其余为静态示意。</p>
+    <table class="bz-table">
+      <caption>状态覆盖索引（徽标文字即线索，颜色只是辅助）</caption>
+      <thead>
+        <tr><th style="width:120px">状态</th><th style="width:74px">徽标文字</th><th>在本原型的出现位置</th><th style="width:96px">是否可点</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>必选（必填）</td><td><span class="bz-tag bz-tag--req">必选</span></td><td>屏 A「登录区域（国内版 / 国际版）」下拉：默认不预选，未选就点「登录」会就地报错且不发请求</td><td>是（下拉）</td></tr>
+        <tr><td>可选（非必填）</td><td><span class="bz-tag bz-tag--optional">可选</span></td><td>屏 B「选择专家库（可多选）」开关区：全不勾选是合法空态</td><td>是（开关）</td></tr>
+        <tr><td>禁用（含原因）</td><td><span class="bz-tag bz-tag--disabled">禁用：原因</span></td><td>屏 A 未配置凭据的登录按钮、屏 B 记忆市场搜索框、屏 B 冲突技能安装按钮</td><td>否（禁用）</td></tr>
+        <tr><td>只读</td><td><span class="bz-tag bz-tag--readonly">只读</span></td><td>屏 A 凭据值（脱敏）、屏 A 已登录账号标识、屏 B「当前使用」专家条目</td><td>否</td></tr>
+        <tr><td>空数据</td><td><span class="bz-tag bz-tag--empty">空数据</span></td><td>屏 A 默认专家库未选择、屏 A 无已注册 provider、屏 B 未勾选任何专家库</td><td>部分（有空态入口按钮）</td></tr>
+        <tr><td>加载中</td><td><span class="bz-tag bz-tag--loading">加载中</span></td><td>屏 A「示例专家库」页签、屏 B「示例专家库」分区（可重放）</td><td>部分（重放按钮）</td></tr>
+        <tr><td>出错 + 重试</td><td><span class="bz-tag bz-tag--error">出错</span></td><td>屏 A「Beta 专家库」页签（只红内容区）、屏 B「示例专家库」分区（只红该分区）</td><td>是（重试）</td></tr>
+        <tr><td>危险操作二次确认</td><td><span class="bz-tag bz-tag--danger">危险</span></td><td>屏 A「清理缓存」「退出登录」、屏 B 冲突技能的覆盖意图</td><td>是（弹窗确认）</td></tr>
+      </tbody>
+    </table>
+    <div class="bz-legend">
+      <span><b>真正可点：</b></span>
+      <span>① 屏 A 页签切换</span>
+      <span>①′ 屏 A 登录区域下拉（不选就点登录可看字段级出错态）</span>
+      <span>② 屏 A「重试」「重放加载态」</span>
+      <span>③ 屏 A「清理缓存」「退出登录」（二次确认）</span>
+      <span>④ 屏 A「演示：无已注册专家库」</span>
+      <span>⑤ 屏 B 三个专家库开关</span>
+      <span>⑥ 屏 B 搜索框与分类筛选</span>
+      <span>⑦ 屏 B 各分区「重试」「重放加载态」</span>
+      <span>⑧ 顶部深色/浅色切换</span>
+    </div>
+  </section>
+
+  <!-- ── 原型范围（Prototype Scope） ────────────────────────────────── -->
+  <section class="bz-doc" id="scope" aria-labelledby="scope-h">
+    <h2 id="scope-h">原型范围 <span class="bz-idx">Prototype Scope</span></h2>
+    <p>本原型只回答两屏的布局、分组形态与状态语义，不回答数据来源与内部实现。</p>
+    <ul>
+      <li><strong>在范围内：</strong>设置页的 provider 分页签结构（账号 / 凭据 / 缓存 / 连接器授权四块）、默认专家库空态、单页签加载与出错；会话辅助面板的 provider 多选开关、按库分组并列、搜索与分类筛选、技能市场与记忆市场两个来源、单库故障隔离、跨库同名前缀、空态与危险操作确认。</li>
+      <li><strong>不在范围内：</strong>真实接口与网络行为、真实扫码登录、真实落盘路径、权限与凭据解析细节、provider 注册表本身（属 spec 而非界面）。</li>
+      <li><strong>示意数据：</strong>内置 <code>WorkBuddy</code>（对应 <code>providerId=workbuddy</code>）、<code>示例专家库</code>（<code>demo</code>，示意第三方 provider）、<code>Beta 专家库</code>（<code>beta</code>，用于演示出错与未启用两种状态）。三者都是占位数据，不含任何真实账号或密钥。</li>
+      <li><strong>不涉及：</strong>连接器「一键写入宿主配置并重载」——该能力留待 1.1.0，本原型不出现对应入口。</li>
+    </ul>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <!-- 逐屏呈现                                                          -->
+  <!-- ════════════════════════════════════════════════════════════════ -->
+  <section class="bz-doc" id="screens" aria-labelledby="screens-h" style="padding-bottom:6px">
+    <h2 id="screens-h">逐屏呈现 <span class="bz-idx">Screens</span></h2>
+    <p>两屏并列呈现。屏 A 用于配置与诊断，屏 B 用于会话内选择；两屏共用同一份「已注册 provider 集合」，不各自维护。</p>
+  </section>
+
+  <!-- ── 屏 A ───────────────────────────────────────────────────────── -->
+  <div class="bz-mock" id="mockA">
+    <div class="bz-mock-chrome">
+      <span class="bz-dot"></span><span class="bz-dot"></span><span class="bz-dot"></span>
+      <span class="bz-title">屏 A · 设置页 — DSH 设置 › 扩展 › dsh-bazaar</span>
+      <span class="bz-spacer"></span>
+      <span class="bz-tag bz-tag--readonly">静态示意 + 局部可点</span>
+    </div>
+    <div class="bz-mock-body">
+      <div class="bz-settings">
+
+        <div class="bz-settings-head">
+          <h3>专家库设置</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="bz-btn bz-btn--sm" id="demoNoProvider" type="button">演示：无已注册专家库</button>
+          </div>
+        </div>
+
+        <!-- 默认 provider 空态 -->
+        <div class="bz-banner bz-banner--empty" id="defaultBanner">
+          <div>
+            <b>默认专家库：未选择</b>
+            <span class="bz-tag bz-tag--empty" style="margin-left:6px">空数据</span>
+            <p>
+              <code>defaultProvider</code> 为空。新会话的 <code>activeProviders</code> 是空数组，会话面板显示「尚未选择专家库」，
+              模型工具未传 <code>provider</code> 时返回 <code>BAZAAR_PROVIDER_REQUIRED</code> 引导错误——不会静默回落到第一个已注册的专家库。
+              配置指向未注册 id 时会报错并回落首个已注册。
+            </p>
+          </div>
+        </div>
+
+        <!-- 页签 -->
+        <div class="bz-tabs" id="settingsTabs" role="tablist" aria-label="已注册的专家库"></div>
+
+        <!-- 页签内容 -->
+        <div id="settingsPanels"></div>
+
+        <div class="bz-toast" id="settingsToast" hidden></div>
+      </div>
+    </div>
+  </div>
+  <p class="bz-caption">
+    <b>本屏回答的需求：</b><code>provider-registry</code>「设置页与面板的 provider 区域由注册表驱动并标注状态」、
+    <code>account-auth</code>「账号区界面状态语义」、<code>connector-market</code>「连接器界面状态语义」、「复制配置片段只产出文本」。
+    <b>为什么这样设计：</b>一个 provider 一个页签，页签标题取 <code>displayName</code>（不显示 <code>providerId</code>），
+    因此新增 provider 不需要改界面代码；出错时只把该页签的内容区标红，页签本身仍可切换，避免一个上游故障让整页不可用；
+    凭据只出现「名称 + 是否已配置 + 脱敏值」，值永不可编辑，从界面上排除密钥被误改的可能。
+  </p>
+
+  <!-- ── 屏 B ───────────────────────────────────────────────────────── -->
+  <div class="bz-mock" id="mockB">
+    <div class="bz-mock-chrome">
+      <span class="bz-dot"></span><span class="bz-dot"></span><span class="bz-dot"></span>
+      <span class="bz-title">屏 B · 会话辅助面板 — 对话输入区左侧「集市」</span>
+      <span class="bz-spacer"></span>
+      <span class="bz-tag bz-tag--readonly">多选开关可点</span>
+    </div>
+    <div class="bz-mock-body">
+      <div class="bz-panel">
+
+        <div class="bz-panel-head">
+          <h3>集市 · 会话辅助</h3>
+          <span class="bz-note">会话 <code>sess-demo</code> · 状态来自会话状态文件，非全局</span>
+        </div>
+
+        <!-- provider 多选开关 -->
+        <div class="bz-panel-section">
+          <h4 id="switchGroupLabel">
+            选择专家库（可多选）
+            <span class="bz-tag bz-tag--optional">可选</span>
+            <span class="bz-note">可同时勾选多个；每个勾选项在下方向自己的分区取数</span>
+          </h4>
+          <div class="bz-switches" id="providerSwitches" role="group" aria-labelledby="switchGroupLabel" aria-describedby="switchGroupHint"></div>
+          <p class="bz-field-hint" id="switchGroupHint">本开关组不是必填项：全不勾选是合法空态，下方显示「尚未选择专家库」入口，不因此阻止浏览或搜索。真正的必填在请求层——单次选择 / 安装请求缺少 <code>providerId</code> 才返回 <code>BAZAAR_PROVIDER_REQUIRED</code>。</p>
+        </div>
+
+        <!-- 专家分组 -->
+        <div class="bz-panel-section">
+          <h4>
+            专家
+            <span class="bz-note">按专家库分组并列；同一条目名出现在多个库时带「库名 ·」限定前缀</span>
+          </h4>
+          <div id="expertArea"></div>
+        </div>
+
+        <!-- 技能 + 记忆 -->
+        <div class="bz-panel-section">
+          <h4>
+            技能
+            <span class="bz-note">每个专家库两个来源：技能市场 / 记忆市场，分别取数、分别报错</span>
+          </h4>
+          <div id="skillArea"></div>
+        </div>
+
+      </div>
+      <div class="bz-toast" id="panelToast" hidden></div>
+    </div>
+  </div>
+  <p class="bz-caption">
+    <b>本屏回答的需求：</b><code>expert-market</code>「专家列表按 provider 分组并列返回」「未选择任何专家库时显示空态并给出入口」
+    「单个 provider 故障隔离」「跨库同名专家以 provider 限定前缀区分」「专家列表与选择的界面状态语义」；
+    <code>skill-market</code>「技能市场按 provider 分组并标注来源」「跨库同名技能安装必须被拒绝并指出已有来源」「记忆市场在宿主缺少记忆插件时显式不可用」「技能区的界面状态语义」；
+    <code>connector-market</code>「会话级工具门控按 providerId 分组 deny 并合并」（未启用库的条目以禁用态呈现）。
+    <b>为什么这样设计：</b>顶部用多选开关而不是单选下拉，因为一个会话可以同时用两个专家库；
+    每个库一个独立分区、独立请求、独立错误与重试，使「一个库挂了」不会伪装成「整个集市挂了」；
+    同名条目加限定前缀但不改真实 id，选择时仍按 <code>providerId</code> + <code>id</code> 双键提交，避免前缀污染身份。
+  </p>
+
+  <!-- ── 字段语义（Field Semantics） ────────────────────────────────── -->
+  <section class="bz-doc" id="fieldSemantics" aria-labelledby="fs-h">
+    <h2 id="fs-h">字段语义 <span class="bz-idx">Field Semantics</span></h2>
+    <p>下表逐字段说明「在原型里怎么看出来」以及「服务端对应的强制点」。禁用与只读不只靠颜色，均在界面上写有文字原因。</p>
+    <table class="bz-table">
+      <caption>字段状态与后端对应</caption>
+      <thead>
+        <tr><th style="width:64px">屏</th><th style="width:150px">字段 / 控件</th><th style="width:96px">类别</th><th>原型里的可见线索</th><th style="width:230px">后端对应</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A</td><td>默认专家库</td><td><span class="bz-tag bz-tag--empty">空数据</span></td>
+          <td>顶部虚线空态块，写明「默认专家库：未选择」与后续影响</td>
+          <td><code>defaultProvider</code> 为空 → 新会话 <code>activeProviders</code> 为空；工具未传 provider 返回 <code>BAZAAR_PROVIDER_REQUIRED</code></td>
+        </tr>
+        <tr>
+          <td>A</td><td>凭据值</td><td><span class="bz-tag bz-tag--readonly">只读</span></td>
+          <td>显示 <code>••••••••3f9a</code> 与「只读」徽标，无输入框、无编辑入口</td>
+          <td>接口只回「已配置 / 未配置」与脱敏占位；解析只经宿主凭据服务，配置中不落明文</td>
+        </tr>
+        <tr>
+          <td>A</td><td>凭据值（未配置）</td><td><span class="bz-tag bz-tag--error">出错</span></td>
+          <td>「示例专家库」页签内：整块左侧红条 + 「出错」徽标 + 两句话写清「错在哪 / 怎么改」，并给出要写入的凭据名</td>
+          <td><code>aria-invalid="true"</code> + <code>aria-describedby</code> 锚到说明；服务端返回 <code>BAZAAR_AUTH_MISSING</code>，该库在线入口保持禁用</td>
+        </tr>
+        <tr>
+          <td>A</td><td>登录区域（国内版 / 国际版）</td><td><span class="bz-tag bz-tag--req">必选</span></td>
+          <td>标签行挂「必选」徽标；下拉第一项为「请选择（国内版 / 国际版）」且不预选任何区域，旁边写清选错等于把令牌发错主机；未选就点登录时该字段变红条 + 「错在哪 / 怎么改」两句说明，<code>aria-invalid</code> + <code>aria-describedby</code> 锚定</td>
+          <td><code>required</code> + <code>aria-required="true"</code>；界面拦下时不发出 <code>accounts/action</code> 请求；服务端对缺失或非法 <code>region</code> 返回 <code>BAZAAR_PARAM_INVALID</code> 并指明字段</td>
+        </tr>
+        <tr>
+          <td>A</td><td>登录按钮（凭据未配置）</td><td><span class="bz-tag bz-tag--disabled">禁用：凭据未配置</span></td>
+          <td>按钮置灰并紧跟一行文字「禁用原因：凭据未配置」，鼠标不可聚焦</td>
+          <td>服务端直接拒绝登录，返回凭据缺失类 <code>BAZAAR_*</code> 错误码；不产生登录标识</td>
+        </tr>
+        <tr>
+          <td>A</td><td>清理缓存</td><td><span class="bz-tag bz-tag--danger">危险操作</span></td>
+          <td>按钮带「危险」徽标；点击弹二次确认，写明将删除该专家库的缓存目录</td>
+          <td>确认后才执行；按 <code>providerId</code> 定位 <code>&lt;DSH_HOME&gt;/bazaar/providers/&lt;id&gt;/cache/</code></td>
+        </tr>
+        <tr>
+          <td>A</td><td>退出登录</td><td><span class="bz-tag bz-tag--danger">危险操作</span></td>
+          <td>按钮带「危险」徽标 + 二次确认，写明需重新登录</td>
+          <td>确认后删除该 provider 账号目录下对应记录</td>
+        </tr>
+        <tr>
+          <td>A</td><td>页签内容（某 provider 出错）</td><td><span class="bz-tag bz-tag--error">出错</span></td>
+          <td>仅该页签内容区出现红色错误块与「重试」；其他页签正常，页签条本身可继续切换</td>
+          <td>单库失败不整体报错；重试只重发该 provider 的请求</td>
+        </tr>
+        <tr>
+          <td>B</td><td>专家库开关组</td><td><span class="bz-tag bz-tag--optional">可选</span></td>
+          <td>标题写「可多选」并挂「可选」徽标，下方一行说明「全不勾选是合法空态」；全不勾选时下方整块变空态并给出入口</td>
+          <td>全不勾选是合法终态：服务端接受 <code>activeProviders: []</code> 并返回空态，不报错；必填只在请求层——单次选择 / 安装请求缺 <code>providerId</code> 返回 <code>BAZAAR_PROVIDER_REQUIRED</code>，不回落首个已注册</td>
+        </tr>
+        <tr>
+          <td>B</td><td>专家条目（当前使用）</td><td><span class="bz-tag bz-tag--readonly">只读</span></td>
+          <td>条目右侧「当前使用」徽标，按钮变为不可点的「已选」文字</td>
+          <td>重复选择同一条目幂等，不产生第二条记录</td>
+        </tr>
+        <tr>
+          <td>B</td><td>专家条目（未启用的库）</td><td><span class="bz-tag bz-tag--disabled">禁用：该专家库未启用</span></td>
+          <td>未勾选的库不渲染分区；已勾选但无权限的条目按钮禁用并写明原因</td>
+          <td>未激活 provider 的工具与条目在会话级被 deny；绕过界面直接调用返回错误</td>
+        </tr>
+        <tr>
+          <td>B</td><td>技能安装按钮（跨库同名）</td><td><span class="bz-tag bz-tag--disabled">禁用：已被 WorkBuddy 安装</span></td>
+          <td>条目上挂「冲突」徽标，按钮禁用并写明已有来源；提供「查看已有安装」链接</td>
+          <td>返回 <code>BAZAAR_SKILL_NAME_CONFLICT</code> 并指出已有来源 <code>providerId</code>；<code>force</code> 也不覆盖他人安装</td>
+        </tr>
+        <tr>
+          <td>B</td><td>记忆市场搜索框（不可用）</td><td><span class="bz-tag bz-tag--disabled">禁用：未声明 memoryMarket</span></td>
+          <td>输入框置灰 + 同行文字原因；该列显示不可用说明而非「暂无条目」</td>
+          <td>未声明域返回 <code>BAZAAR_CAPABILITY_UNDECLARED</code>；插件缺失时返回带插件名的不可用原因</td>
+        </tr>
+        <tr>
+          <td>B</td><td>某库分区（出错）</td><td><span class="bz-tag bz-tag--error">出错</span></td>
+          <td>只有该分区红框 + 分区内「重试」，其他分区照常显示条目</td>
+          <td>重试只重发该 provider；失败分区不被隐藏、不被替换为空白</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── 状态覆盖（State Coverage） ──────────────────────────────────── -->
+  <section class="bz-doc" id="stateCoverage" aria-labelledby="sc-h">
+    <h2 id="sc-h">状态覆盖 <span class="bz-idx">State Coverage</span></h2>
+    <p>空 / 加载 / 出错三态在两屏内部切换，不靠改代码或换文件。</p>
+    <table class="bz-table">
+      <thead>
+        <tr><th style="width:88px">状态</th><th style="width:170px">出现位置</th><th>如何触发 / 观察</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>空数据</td><td>屏 A 默认专家库</td><td>常驻展示；点「演示：无已注册专家库」可看注册表为空的整块空态</td></tr>
+        <tr><td>空数据</td><td>屏 B 未勾选任何专家库</td><td>把三个开关全部关掉 → 「尚未选择专家库」+「选择 WorkBuddy」入口</td></tr>
+        <tr><td>加载中</td><td>屏 A「示例专家库」页签</td><td>切到该页签可见骨架 + 「加载中」徽标；点「重放加载态」再次看到</td></tr>
+        <tr><td>加载中</td><td>屏 B「示例专家库」分区</td><td>默认即为此态；点该分区「重放加载态」可重现</td></tr>
+        <tr><td>出错 + 重试</td><td>屏 A「Beta 专家库」页签</td><td>默认即为此态（只红内容区）；点「重试」→ 加载 → 恢复内容</td></tr>
+        <tr><td>出错 + 重试</td><td>屏 B「示例专家库」分区</td><td>默认即为此态（只红该分区）；点「重试」→ 加载 → 恢复条目</td></tr>
+        <tr><td>禁用</td><td>屏 B 记忆市场 / 冲突技能</td><td>常驻展示，禁用原因以文字写在同一行</td></tr>
+        <tr><td>必选未选</td><td>屏 A 登录区域</td><td>不选区域直接点「登录」→ 该下拉进入字段级出错态并给出「错在哪 / 怎么改」，同时不发请求；选中任一区域后错误即时清除</td></tr>
+        <tr><td>字段级出错</td><td>屏 A「示例专家库」凭据值</td><td>常驻展示（该库凭据未配置）：<code>aria-invalid</code> + 锚定说明「错在哪 / 怎么改」，不用纯红边框表达</td></tr>
+        <tr><td>危险操作确认</td><td>屏 A 清理缓存 / 退出登录</td><td>点击后弹确认框；取消不执行，确认后出现成功反馈条</td></tr>
+        <tr><td>深色 / 浅色</td><td>全站</td><td>右上角按钮切换；两套令牌下徽标文字与正文对比度均保持可读</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── 设计系统对齐（Design System Alignment） ─────────────────────── -->
+  <section class="bz-doc" id="designSystem" aria-labelledby="ds-h">
+    <h2 id="ds-h">设计系统对齐 <span class="bz-idx">Design System Alignment</span></h2>
+    <p>
+      <strong>设计基准文件：<code>DESIGN.md</code></strong>（仓库根目录，与 <code>AGENTS.md</code> 同层，
+      <code>@google/design.md lint</code> 结果 errors 0 / warnings 0）。本原型的全部颜色、字号、圆角与间距取值都来自该文件，
+      不在本文件内自造视觉语言。
+    </p>
+    <ul>
+      <li><strong>取色基准：</strong><code>DESIGN.md</code> 的 <code>colors</code> 键。实际落地时优先读宿主 <code>--dsw-alias-*</code> / <code>--dsw-static-neutral-bluish-*</code> 令牌（源插件 CSS 即以此为基础），原型独立打开时用 <code>--bz-*</code> 承接同一组值并带宿主令牌兜底，语义与宿主一一对应：背景 / 表面 / 次级表面 / 边框 / 主色 / 成功 / 警告 / 危险。</li>
+      <li><strong>状态色对比度：</strong>三组状态色取同色系最深档配最浅底（<code>error</code> #570C0C on #FEF2F2 = 13.12:1、<code>success</code> #233C2C on #E6FAED = 10.98:1、<code>warning</code> #27241F on #FEF5E7 = 14.30:1），而非宿主的 <code>state-*-primary</code>（在浅底上仅 2.15–4.50:1，不达 WCAG AA）。<code>state-*-primary</code> 只用于边框、圆点等非文字承载。</li>
+      <li><strong>类名前缀：</strong>统一 <code>bz-</code>，与变更约定的 CSS 前缀一致，避免与宿主样式冲突。</li>
+      <li><strong>字号：</strong>只用 <code>DESIGN.md</code> 登记的 16 / 14 / 13 / 12 / 11 px 五档；层级靠字号与字重，不靠更浅的灰。</li>
+      <li><strong>圆角与投影：</strong>圆角只用 <code>rounded</code> 刻度的 5 / 8 / 12 / 999px；不使用投影表达层级（宿主 <code>--dsw-mask-blur</code> 为 <code>none</code>），层级由底色与 1px 边框承担，浮层用 <code>bg-mask-1</code> 遮罩分离。</li>
+      <li><strong>深色模式：</strong><code>[data-theme="dark"]</code> 覆盖整组令牌并反转前景/背景，所有徽标保留边框与文字（不靠纯色块表达状态），因此在两种主题下都可辨。</li>
+      <li><strong>状态语义来源：</strong>必填 / 禁用 / 只读 / 空 / 加载 / 出错 / 危险操作七类，与 <code>specs/</code> 中「界面状态语义」需求逐条对应，并已写入 <code>DESIGN.md</code> 的 Components 状态清单（含程序承载 <code>aria-*</code> 与属性名）。</li>
+      <li><strong>版式：</strong>设置页卡片最大宽度 820px，<code>DESIGN.md</code> 规定内容区上限 1120px，本屏取更窄的列宽；面板分组用自适应网格，窄屏自动堆叠为单列。</li>
+    </ul>
+  </section>
+
+  <!-- ── 用户确认（User Confirmation） ──────────────────────────────── -->
+  <section class="bz-doc" id="userConfirmation" aria-labelledby="uc-h">
+    <h2 id="uc-h">用户确认 <span class="bz-idx">User Confirmation</span></h2>
+    <p>
+      本原型<strong>屏 A、屏 B 均已确认通过</strong>（用户答复「屏a,b都认可。继续吧」，结论已回写
+      <code>clarify.md</code> 的「用户与场景」小节）。下方勾选仅记录在本次会话里，不改动任何状态文件。
+    </p>
+    <table class="bz-table">
+      <thead><tr><th style="width:64px">屏</th><th>待确认事项</th><th style="width:120px">结论</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>A</td>
+          <td>设置页改为「每 provider 一个页签」，页签内固定四块（账号 / 凭据 / 缓存 / 连接器授权）；默认专家库空态置顶。</td>
+          <td><span class="bz-tag bz-tag--ok">已确认</span></td>
+        </tr>
+        <tr>
+          <td>B</td>
+          <td>面板顶部为 provider 多选开关（非单选下拉），下方按库分组并列；单库故障只红自己那一块并给重试；同名条目加「库名 ·」前缀。</td>
+          <td><span class="bz-tag bz-tag--ok">已确认</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="margin-top:12px">
+      <strong>确认后的一处语义修订</strong>（架构审查指出「必填标识与后端校验不同源」，属于必须修的一类问题，不改变已确认的版式与区块结构）：
+    </p>
+    <table class="bz-table">
+      <thead><tr><th style="width:64px">屏</th><th>修订内容</th><th style="width:220px">与哪条服务端规则对齐</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>B</td>
+          <td>provider 开关组<b>不再是必填</b>：标题改为「选择专家库（可多选）」并挂「可选」徽标，去掉 <code>aria-required</code>；全不勾选是合法空态。</td>
+          <td><code>provider-registry</code>「显式清空活跃集被放行」、<code>expert-market</code>「未选择任何专家库时显示空态并给出入口」——服务端接受 <code>activeProviders: []</code>。</td>
+        </tr>
+        <tr>
+          <td>A</td>
+          <td>新增「登录区域（国内版 / 国际版）」<b>必选项</b>：默认不预选，未选就点登录时下拉进入字段级出错态且不发请求。</td>
+          <td><code>account-auth</code>「账号区界面状态语义」：服务端对缺失或非法 <code>region</code> 返回 <code>BAZAAR_PARAM_INVALID</code>，绕过界面同样被拦。</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px">
+      <label class="bz-check"><input type="checkbox" id="ackA"><span>我已逐屏看过屏 A，认可页签结构与四块内容的排布（仅本地记录）</span></label>
+      <label class="bz-check"><input type="checkbox" id="ackB"><span>我已逐屏看过屏 B，认可多选开关、分组并列与状态标注（仅本地记录）</span></label>
+      <div class="bz-toast" id="ackToast" hidden></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ── 二次确认弹窗 ─────────────────────────────────────────────────── -->
+<div class="bz-modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="bz-modal-card">
+    <h4 id="modalTitle"><span class="bz-tag bz-tag--danger">危险操作</span><span id="modalHead"></span></h4>
+    <p id="modalBody"></p>
+    <div class="bz-modal-actions">
+      <button class="bz-btn" id="modalCancel" type="button">取消</button>
+      <button class="bz-btn bz-btn--danger" id="modalOk" type="button">确认执行</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict'
+
+  // ── 主题 ────────────────────────────────────────────────────────────────
+  var themeBtn = document.getElementById('themeToggle')
+  var themeLabel = document.getElementById('themeLabel')
+  themeBtn.addEventListener('click', function () {
+    var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = next
+    themeLabel.textContent = next === 'dark' ? '当前：深色' : '当前：浅色'
+  })
+
+  // ── 示意数据（占位，不含真实账号与密钥） ─────────────────────────────────
+  var PROVIDERS = [
+    {
+      id: 'workbuddy',
+      displayName: 'WorkBuddy',
+      avatar: 'WB',
+      kind: '内置 provider',
+      declared: ['expertMarket', 'skillMarket', 'memoryMarket', 'connectorMarket', 'account'],
+      credentialRef: 'BAZAAR_WORKBUDDY_TOKEN',
+      credentialConfigured: true,
+      credentialMask: '••••••••3f9a',
+      account: { loggedIn: true, label: 'a***@workbuddy.cn', expires: '2026-12-21 10:04', region: 'cn' },
+      cache: { bytes: 13631488, entries: 128 },
+      connectors: [
+        { name: 'web-search', transport: 'http', state: 'authorized', tools: 3 },
+        { name: 'code-runner', transport: 'stdio', state: 'needs-auth', tools: 0 }
+      ]
+    },
+    {
+      id: 'demo',
+      displayName: '示例专家库',
+      avatar: 'DE',
+      kind: '示例 provider（examples/minimal-provider）',
+      declared: ['expertMarket', 'skillMarket'],
+      credentialRef: 'BAZAAR_DEMO_TOKEN',
+      credentialConfigured: false,
+      credentialMask: '（未配置）',
+      account: null,
+      cache: { bytes: 0, entries: 0 },
+      connectors: null
+    },
+    {
+      id: 'beta',
+      displayName: 'Beta 专家库',
+      avatar: 'BT',
+      kind: '示意第三方 provider',
+      declared: ['expertMarket', 'skillMarket', 'account'],
+      credentialRef: 'BAZAAR_BETA_TOKEN',
+      credentialConfigured: true,
+      credentialMask: '••••••••b71c',
+      account: { loggedIn: false, label: '', expires: '', region: 'global' },
+      cache: { bytes: 2097152, entries: 12 },
+      connectors: null
+    }
+  ]
+
+  var EXPERTS = {
+    workbuddy: [
+      { id: 'writer', name: '写作助手', cat: 'content', desc: '中文长文写作与改写', skills: 12 },
+      { id: 'reviewer', name: '代码审查', cat: 'code', desc: '按仓库规范审查改动', skills: 8 },
+      { id: 'analyst', name: '数据分析', cat: 'data', desc: '表格与指标口径梳理', skills: 6 }
+    ],
+    demo: [
+      { id: 'writer', name: '写作助手', cat: 'content', desc: '英文文案与本地化改写', skills: 4 },
+      { id: 'translator', name: '翻译助手', cat: 'content', desc: '中英互译与术语统一', skills: 3 }
+    ],
+    beta: [
+      { id: 'planner', name: '计划助手', cat: 'content', desc: '任务拆解与排期', skills: 5 }
+    ]
+  }
+
+  var SKILLS = {
+    workbuddy: {
+      skillMarket: [
+        { slug: 'doc-writer', desc: '长文档结构化写作', installed: true, by: 'workbuddy' },
+        { slug: 'code-review', desc: '按规范审查改动', installed: false },
+        { slug: 'data-brief', desc: '指标口径速览', installed: false }
+      ],
+      memoryMarket: {
+        available: true,
+        items: [
+          { slug: 'mem-glossary', desc: '项目术语与口径' },
+          { slug: 'mem-style', desc: '历史文风偏好' }
+        ]
+      }
+    },
+    demo: {
+      skillMarket: [
+        { slug: 'doc-writer', desc: '英文写作（与 WorkBuddy 同名）', installed: false, conflictBy: 'WorkBuddy' },
+        { slug: 'translate-kit', desc: '术语表与批量翻译', installed: false }
+      ],
+      memoryMarket: { available: false, reason: '该专家库未声明 memoryMarket 能力（BAZAAR_CAPABILITY_UNDECLARED）' }
+    },
+    beta: {
+      skillMarket: [{ slug: 'plan-kit', desc: '排期模板', installed: false }],
+      memoryMarket: { available: false, reason: '宿主未安装记忆插件 dsh-mnemon（示意）' }
+    }
+  }
+
+  var CATS = [
+    { key: 'all', label: '全部' },
+    { key: 'content', label: '内容' },
+    { key: 'code', label: '代码' },
+    { key: 'data', label: '数据' }
+  ]
+
+  // ── 运行态 ──────────────────────────────────────────────────────────────
+  var state = {
+    settings: {
+      active: 'workbuddy',
+      registered: true,
+      phase: { workbuddy: 'ready', demo: 'loading', beta: 'error' },
+      message: { beta: '凭据服务返回 503：上游不可用（示意错误）' },
+      region: {},
+      regionError: {}
+    },
+    panel: {
+      checked: { workbuddy: true, demo: true, beta: false },
+      phase: { workbuddy: 'loading', demo: 'error', beta: 'ready' },
+      message: { demo: '专家列表请求超时（8000ms）' },
+      search: {},
+      cat: {}
+    }
+  }
+
+  var timers = {}
+  function later (key, ms, fn) {
+    if (timers[key]) return
+    timers[key] = setTimeout(function () { delete timers[key]; fn() }, ms)
+  }
+
+  // ── 二次确认 ────────────────────────────────────────────────────────────
+  var modal = document.getElementById('modal')
+  var modalHead = document.getElementById('modalHead')
+  var modalBody = document.getElementById('modalBody')
+  var pendingOk = null
+  function askConfirm (head, body, onOk) {
+    modalHead.textContent = head
+    modalBody.textContent = body
+    pendingOk = onOk
+    modal.hidden = false
+    document.getElementById('modalCancel').focus()
+  }
+  document.getElementById('modalCancel').addEventListener('click', function () {
+    modal.hidden = true
+    pendingOk = null
+  })
+  document.getElementById('modalOk').addEventListener('click', function () {
+    modal.hidden = true
+    if (pendingOk) pendingOk()
+    pendingOk = null
+  })
+
+  function showToast (el, text) {
+    el.textContent = text
+    el.hidden = false
+  }
+  function hideToast (el) { el.hidden = true }
+
+  function fmtBytes (n) {
+    if (!n) return '0 B'
+    if (n < 1024) return n + ' B'
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB'
+    return (n / 1048576).toFixed(1) + ' MB'
+  }
+
+  function meta (id) {
+    for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === id) return PROVIDERS[i]
+    return null
+  }
+  function declares (p, cap) { return p.declared.indexOf(cap) !== -1 }
+
+  // ── 屏 A：设置页 ────────────────────────────────────────────────────────
+  var tabsEl = document.getElementById('settingsTabs')
+  var panelsEl = document.getElementById('settingsPanels')
+  var settingsToast = document.getElementById('settingsToast')
+
+  function renderTabs () {
+    if (!state.settings.registered) { tabsEl.innerHTML = ''; tabsEl.style.display = 'none'; return }
+    tabsEl.style.display = ''
+    var html = ''
+    PROVIDERS.forEach(function (p) {
+      var phase = state.settings.phase[p.id]
+      var badge = ''
+      if (phase === 'loading') badge = '<span class="bz-tag bz-tag--loading">加载中</span>'
+      if (phase === 'error') badge = '<span class="bz-tag bz-tag--error">出错</span>'
+      var errCls = phase === 'error' ? ' bz-tab--error' : ''
+      html += '<button type="button" role="tab" class="bz-tab' + errCls + '"' +
+        ' data-tab="' + p.id + '" id="tab-' + p.id + '" role="tab" aria-controls="pane-' + p.id + '" aria-selected="' + (state.settings.active === p.id ? 'true' : 'false') + '"' +
+        ' aria-controls="panel-' + p.id + '">' +
+        '<span class="bz-tab-avatar">' + p.avatar + '</span><span>' + p.displayName + '</span>' + badge +
+        '</button>'
+    })
+    tabsEl.innerHTML = html
+  }
+
+  function accountBlock (p) {
+    if (!declares(p, 'account')) {
+      return '<div class="bz-state-block"><b>未声明账号能力</b><span class="bz-tag bz-tag--disabled" style="margin-left:6px">不适用</span>' +
+        '<div class="bz-row"><span class="bz-note">该 provider 的 <code>capabilities.account</code> 未声明，账号区不渲染任何登录入口，调用该域返回 <code>BAZAAR_CAPABILITY_UNDECLARED</code>。</span></div></div>'
+    }
+    var a = p.account
+    if (a && a.loggedIn) {
+      return '' +
+        '<div class="bz-field">' +
+        '  <div class="bz-field-label">登录状态</div>' +
+        '  <div class="bz-field-value"><span class="bz-tag bz-tag--ok">已登录</span>' +
+        '    <span class="bz-val bz-mono">' + a.label + '</span>' +
+        '    <span class="bz-tag bz-tag--readonly">只读</span></div>' +
+        '  <p class="bz-field-hint">账号标识脱敏展示，不可编辑；切换账号请先退出。</p>' +
+        '</div>' +
+        '<div class="bz-field">' +
+        '  <div class="bz-field-label">区域 / 到期</div>' +
+        '  <div class="bz-field-value"><span class="bz-val bz-mono">' + a.region + '</span><span class="bz-val bz-mono">' + a.expires + '</span></div>' +
+        '</div>' +
+        '<div class="bz-field">' +
+        '  <div class="bz-field-label">操作</div>' +
+        '  <div class="bz-field-value">' +
+        '    <button class="bz-btn bz-btn--sm" disabled aria-disabled="true" aria-describedby="login-why-' + p.id + '" title="同 provider 重复登录为幂等刷新">重新登录（已登录，暂不可用）</button>' +
+        '    <span class="bz-sr" id="login-why-' + p.id + '">禁用原因：该 provider 已登录，重复登录只会幂等刷新。</span>' +
+        '    <button class="bz-btn bz-btn--sm bz-btn--danger" data-logout="' + p.id + '">退出登录</button>' +
+        '    <span class="bz-tag bz-tag--danger">危险</span>' +
+        '  </div>' +
+        '  <p class="bz-field-hint">禁用原因：当前已是登录态，重新登录需先退出（演示）。退出登录会二次确认。</p>' +
+        '</div>'
+    }
+    var loginDisabled = !p.credentialConfigured
+    var region = state.settings.region[p.id] || ''
+    var regionErr = state.settings.regionError[p.id] === true
+    return '' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">登录状态</div>' +
+      '  <div class="bz-field-value"><span class="bz-tag bz-tag--empty">未登录</span>' +
+      '    <span class="bz-tag bz-tag--empty">空数据</span></div>' +
+      '  <p class="bz-field-hint">未登录不影响该库的公开条目（专家 / 技能市场快照仍可取）。</p>' +
+      '</div>' +
+      '<div class="bz-field' + (regionErr ? ' bz-field--invalid' : '') + '">' +
+      '  <div class="bz-field-label">登录区域 <span class="bz-tag bz-tag--req">必选</span></div>' +
+      '  <div class="bz-field-value">' +
+      '    <select class="bz-select" data-region="' + p.id + '" required aria-required="true"' +
+      (regionErr ? ' aria-invalid="true" aria-describedby="region-' + p.id + '-err"' : ' aria-describedby="region-' + p.id + '-hint"') + '>' +
+      '      <option value="">请选择（国内版 / 国际版）</option>' +
+      '      <option value="cn"' + (region === 'cn' ? ' selected' : '') + '>国内版（codebuddy.cn 账号体系）</option>' +
+      '      <option value="global"' + (region === 'global' ? ' selected' : '') + '>国际版（workbuddy.ai 账号体系）</option>' +
+      '    </select>' +
+      '  </div>' +
+      (regionErr
+        ? '  <p class="bz-field-hint bz-field-hint--error" id="region-' + p.id + '-err"><b>错在哪：</b>尚未选择登录区域，无法确定令牌该发往哪套上游账号体系。<b>怎么改：</b>在上方下拉里选「国内版」或「国际版」后再点登录（服务端同样以 <code>BAZAAR_PARAM_INVALID</code> 拒绝缺失 <code>region</code> 的请求）。</p>'
+        : '  <p class="bz-field-hint" id="region-' + p.id + '-hint">区域决定令牌发往哪套上游账号体系，选错等于把令牌发错主机；国内版与国际版是独立账号体系，不能互换。默认不预选。</p>') +
+      '</div>' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">操作</div>' +
+      '  <div class="bz-field-value">' +
+      '    <button class="bz-btn bz-btn--sm bz-btn--primary" ' + (loginDisabled ? 'disabled' : 'data-login="' + p.id + '"') + '>登录</button>' +
+      (loginDisabled ? '<span class="bz-tag bz-tag--disabled">禁用：凭据未配置</span>' : '') +
+      '  </div>' +
+      (loginDisabled ? '<p class="bz-field-hint">禁用原因：该 provider 的凭据 <code>' + p.credentialRef + '</code> 尚未配置，登录必然失败，故不开放入口。</p>' : '') +
+      '</div>'
+  }
+
+  function credentialBlock (p) {
+    // 未配置时该字段进入字段级出错态：说明错在哪、怎么改；不用纯红边框表达
+    var invalid = !p.credentialConfigured
+    var errId = 'cred-' + p.id + '-err'
+    return '' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">凭证名</div>' +
+      '  <div class="bz-field-value"><code>' + p.credentialRef + '</code>' +
+      '    <span class="bz-tag bz-tag--readonly">只读</span></div>' +
+      '  <p class="bz-field-hint">由 <code>providerId</code> 推导（默认 <code>BAZAAR_&lt;ID&gt;_TOKEN</code>），可被 <code>providers.&lt;id&gt;.credentialRef</code> 覆盖。</p>' +
+      '</div>' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">是否已配置</div>' +
+      '  <div class="bz-field-value">' +
+      (p.credentialConfigured
+        ? '<span class="bz-tag bz-tag--ok">已配置</span>'
+        : '<span class="bz-tag bz-tag--empty">未配置</span>') +
+      '  </div>' +
+      '</div>' +
+      (invalid
+        ? '<div class="bz-field bz-field--invalid">' +
+          '  <div class="bz-field-label" id="cred-' + p.id + '-label">值 <span class="bz-tag bz-tag--error">出错</span></div>' +
+          '  <div class="bz-field-value" role="textbox" aria-readonly="true" aria-invalid="true" aria-describedby="' + errId + '" aria-labelledby="cred-' + p.id + '-label">' +
+          '    <span class="bz-val">未配置凭证</span></div>' +
+          '  <p class="bz-field-hint bz-field-hint--error" id="' + errId + '">' +
+          '    <span class="bz-tag bz-tag--error">出错</span>' +
+          '    错在哪：该 provider 的 <code>' + p.credentialRef + '</code> 尚未在宿主凭据服务中写入。' +
+          '    怎么改：打开宿主凭据设置，新建名为 <code>' + p.credentialRef + '</code> 的条目并粘贴令牌；保存后回到本页。' +
+          '    未配置前该库的在线市场与账号相关入口保持禁用（错误码 <code>BAZAAR_AUTH_MISSING</code>）。' +
+          '  </p>' +
+          '</div>'
+        : '<div class="bz-field">' +
+          '  <div class="bz-field-label" id="cred-' + p.id + '-label">值 <span class="bz-tag bz-tag--readonly">只读</span></div>' +
+          '  <div class="bz-field-value" role="textbox" aria-readonly="true" aria-labelledby="cred-' + p.id + '-label"><span class="bz-val bz-mask">' + p.credentialMask + '</span>' +
+          '  </div>' +
+          '  <p class="bz-field-hint">值永不回显、不可在此编辑；请到宿主凭据服务中维护。配置里出现内联密钥会被拒绝（<code>BAZAAR_AUTH_INLINE</code>）。</p>' +
+          '</div>')
+  }
+
+  function cacheBlock (p) {
+    return '' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">占用</div>' +
+      '  <div class="bz-field-value"><span class="bz-val bz-mono">' + fmtBytes(p.cache.bytes) + '</span>' +
+      '    <span class="bz-note">共 ' + p.cache.entries + ' 个条目</span></div>' +
+      '  <p class="bz-field-hint">目录：<code>&lt;DSH_HOME&gt;/bazaar/providers/' + p.id + '/cache/</code></p>' +
+      '</div>' +
+      '<div class="bz-field">' +
+      '  <div class="bz-field-label">清理</div>' +
+      '  <div class="bz-field-value">' +
+      '    <button class="bz-btn bz-btn--sm bz-btn--danger" aria-disabled="' + (p.cache.bytes ? 'false' : 'true') + '"' + (p.cache.bytes ? ' data-clear="' + p.id + '"' : ' disabled aria-describedby="cache-why-' + p.id + '"') + '>清理缓存</button>' +
+      '    <span class="bz-tag bz-tag--danger">危险</span>' +
+      (p.cache.bytes ? '' : '<span class="bz-tag bz-tag--disabled">禁用：当前无缓存</span>') +
+      '  </div>' +
+      (p.cache.bytes ? '<p class="bz-field-hint">清理会删除该专家库的缓存目录，下次取数需重新拉取；需二次确认。</p>'
+        : '<p class="bz-field-hint" id="cache-why-' + p.id + '">禁用原因：该 provider 目前没有缓存占用。</p>') +
+      '</div>'
+  }
+
+  function connectorBlock (p) {
+    if (!declares(p, 'connectorMarket')) {
+      return '<div class="bz-state-block"><b>未声明连接器能力</b>' +
+        '<span class="bz-tag bz-tag--disabled" style="margin-left:6px">不适用</span>' +
+        '<div class="bz-row"><span class="bz-note">该 provider 的 <code>capabilities.connectorMarket</code> 未声明，本块不渲染连接器列表。</span></div></div>'
+    }
+    var rows = p.connectors.map(function (c) {
+      var badge = c.state === 'authorized'
+        ? '<span class="bz-tag bz-tag--ok">已授权</span>'
+        : '<span class="bz-tag bz-tag--warn">需授权</span>'
+      var act = c.state === 'authorized'
+        ? '<span class="bz-tag bz-tag--readonly">只读</span><button class="bz-btn bz-btn--sm" data-copy="' + p.id + '">复制配置片段</button>' +
+          '<button class="bz-btn bz-btn--sm bz-btn--danger" data-revoke="' + p.id + '">清除授权</button>'
+        : '<button class="bz-btn bz-btn--sm bz-btn--primary" data-authorize="' + p.id + '">授权</button>' +
+          '<button class="bz-btn bz-btn--sm" data-copy="' + p.id + '">复制配置片段</button>'
+      return '<li><span class="bz-val bz-mono">' + c.name + '</span>' +
+        '<span class="bz-note">' + c.transport + ' · ' + c.tools + ' 个工具</span>' + badge + act + '</li>'
+    }).join('')
+    return '' +
+      '<ul class="bz-list">' + rows + '</ul>' +
+      '<p class="bz-field-hint">1.0.0 只提供列表 / 筛选 / 详情 / OAuth 授权 / 复制配置片段；写入宿主配置并重载留待 1.1.0，本页不提供该入口。</p>'
+  }
+
+  function renderPanel () {
+    if (!state.settings.registered) {
+      panelsEl.innerHTML =
+        '<div class="bz-card"><div class="bz-card-body">' +
+        '<div class="bz-state-block" style="margin-top:12px">' +
+        '<b>暂无已注册的专家库</b> <span class="bz-tag bz-tag--empty">空数据</span>' +
+        '<div class="bz-row"><span class="bz-note">注册表为空。安装并启用一个 provider 后，此页会按 <code>displayName</code> 自动出现页签，无需改界面代码。</span></div>' +
+        '<div class="bz-row"><button class="bz-btn bz-btn--sm" id="restoreProviders" type="button">恢复演示数据</button></div>' +
+        '</div></div></div>'
+      return
+    }
+    var p = meta(state.settings.active)
+    var phase = state.settings.phase[p.id]
+    var head = '<div class="bz-card"><div class="bz-card-head"><h4>' + p.displayName +
+      ' <span class="bz-tag bz-tag--readonly">' + p.id + '</span>' +
+      ' <span class="bz-note">' + p.kind + '</span></h4>' +
+      '<span class="bz-note">已声明：' + p.declared.join(' / ') + '</span></div>'
+
+    if (phase === 'loading') {
+      panelsEl.innerHTML = head + '<div class="bz-card-body">' +
+        '<div class="bz-state-block bz-state-block--loading" role="status" aria-busy="true">' +
+        '<b>加载中</b> <span class="bz-tag bz-tag--loading">加载中</span>' +
+        '<div class="bz-skel bz-skel--w60"></div><div class="bz-skel bz-skel--w80"></div><div class="bz-skel bz-skel--w40"></div>' +
+        '<div class="bz-row"><span class="bz-note">只加载当前页签的内容；其他页签的加载状态不受影响。可点「重放加载态」重复观察。</span>' +
+        '<button class="bz-btn bz-btn--sm" data-replay-settings="' + p.id + '" type="button">重放加载态</button></div>' +
+        '</div></div></div>'
+      return
+    }
+    if (phase === 'error') {
+      panelsEl.innerHTML = head + '<div class="bz-card-body">' +
+        '<div class="bz-state-block bz-state-block--error" role="alert">' +
+        '<b>' + p.displayName + ' 加载失败</b> <span class="bz-tag bz-tag--error">出错</span>' +
+        '<div class="bz-row"><span class="bz-val">' + (state.settings.message[p.id] || '未知错误') + '</span></div>' +
+        '<div class="bz-row"><span class="bz-note">只有本页签内容报错；页签条仍可切换，其他专家库不受影响，也不隐藏本页签。</span>' +
+        '<button class="bz-btn bz-btn--sm bz-btn--primary" data-retry-settings="' + p.id + '" type="button">重试</button></div>' +
+        '</div></div></div>'
+      return
+    }
+    panelsEl.innerHTML = head + '<div class="bz-card-body">' +
+      '<h4 style="margin:12px 0 0;font-size:13px;color:var(--bz-text-dim)">账号</h4>' + accountBlock(p) +
+      '<h4 style="margin:6px 0 0;font-size:13px;color:var(--bz-text-dim)">凭据</h4>' + credentialBlock(p) +
+      '<h4 style="margin:6px 0 0;font-size:13px;color:var(--bz-text-dim)">缓存</h4>' + cacheBlock(p) +
+      '<h4 style="margin:6px 0 0;font-size:13px;color:var(--bz-text-dim)">连接器授权</h4>' + connectorBlock(p) +
+      '</div></div>'
+  }
+
+  function renderSettings () {
+    renderTabs()
+    renderPanel()
+  }
+
+  // 屏 A 事件
+  tabsEl.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-tab]')
+    if (!btn) return
+    state.settings.active = btn.dataset.tab
+    hideToast(settingsToast)
+    renderSettings()
+  })
+
+  panelsEl.addEventListener('click', function (e) {
+    var t = e.target.closest('button')
+    if (!t) return
+    if (t.id === 'restoreProviders') {
+      state.settings.registered = true
+      renderSettings()
+      return
+    }
+    var id
+    if ((id = t.dataset.retrySettings)) {
+      state.settings.phase[id] = 'loading'
+      renderSettings()
+      later('settings-' + id, 900, function () {
+        state.settings.phase[id] = 'ready'
+        delete state.settings.message[id]
+        renderSettings()
+        showToast(settingsToast, '重试成功：' + meta(id).displayName + ' 已恢复')
+      })
+      return
+    }
+    if ((id = t.dataset.replaySettings)) {
+      state.settings.phase[id] = 'loading'
+      renderSettings()
+      later('settings-replay-' + id, 1200, function () {
+        state.settings.phase[id] = 'ready'
+        renderSettings()
+      })
+      return
+    }
+    if ((id = t.dataset.clear)) {
+      var p = meta(id)
+      askConfirm(
+        '清理 ' + p.displayName + ' 的缓存',
+        '将删除 <DSH_HOME>/bazaar/providers/' + id + '/cache/ 下的 ' + p.cache.entries +
+        ' 个条目（' + fmtBytes(p.cache.bytes) + '）。下次取数需重新拉取，其他专家库不受影响。',
+        function () {
+          var freed = p.cache.bytes
+          p.cache.bytes = 0
+          p.cache.entries = 0
+          renderSettings()
+          showToast(settingsToast, '已清理 ' + fmtBytes(freed) + ' 缓存')
+        }
+      )
+      return
+    }
+    if ((id = t.dataset.logout)) {
+      var q = meta(id)
+      askConfirm(
+        '退出 ' + q.displayName + ' 的账号',
+        '将删除该专家库账号目录下的登录记录，之后需要重新扫码登录。当前会话的选择不受影响。',
+        function () {
+          if (q.account) q.account.loggedIn = false
+          renderSettings()
+          showToast(settingsToast, '已退出登录，请重新登录')
+        }
+      )
+      return
+    }
+    if ((id = t.dataset.login)) {
+      var r = meta(id)
+      if (!state.settings.region[id]) {
+        state.settings.regionError[id] = true
+        renderSettings()
+        var sel = panelsEl.querySelector('[data-region="' + id + '"]')
+        if (sel) sel.focus()
+        showToast(settingsToast, '请先选择登录区域（国内版 / 国际版）：未选区域时不发出登录请求（服务端同以 BAZAAR_PARAM_INVALID 拒绝）')
+        return
+      }
+      if (r.account) {
+        r.account.loggedIn = true
+        r.account.region = state.settings.region[id]
+        renderSettings()
+        showToast(settingsToast, '登录成功（示意）；region=' + state.settings.region[id])
+      }
+      return
+    }
+    if (t.dataset.copy) {
+      showToast(settingsToast, '配置片段已复制（只产出文本，不改宿主配置）')
+      return
+    }
+    if ((id = t.dataset.authorize)) {
+      showToast(settingsToast, '已发起 OAuth 授权（示意）；进行中状态与轮询不再展开')
+      return
+    }
+    if ((id = t.dataset.revoke)) {
+      askConfirm(
+        '清除连接器授权',
+        '将移除该连接器的授权记录，其工具随即不可用；需要时须重新授权。',
+        function () { showToast(settingsToast, '已清除授权（示意）') }
+      )
+    }
+  })
+
+  panelsEl.addEventListener('change', function (e) {
+    var sel = e.target.closest('[data-region]')
+    if (!sel) return
+    var pid = sel.dataset.region
+    state.settings.region[pid] = sel.value
+    delete state.settings.regionError[pid]
+    renderSettings()
+  })
+
+  document.getElementById('demoNoProvider').addEventListener('click', function () {
+    state.settings.registered = !state.settings.registered
+    hideToast(settingsToast)
+    renderSettings()
+  })
+
+  // ── 屏 B：会话辅助面板 ──────────────────────────────────────────────────
+  var switchesEl = document.getElementById('providerSwitches')
+  var expertArea = document.getElementById('expertArea')
+  var skillArea = document.getElementById('skillArea')
+  var panelToast = document.getElementById('panelToast')
+
+  function renderSwitches () {
+    var html = ''
+    PROVIDERS.forEach(function (p) {
+      var on = !!state.panel.checked[p.id]
+      html += '<label class="bz-switch">' +
+        '<input type="checkbox" data-switch="' + p.id + '" aria-label="启用 ' + p.displayName + ' 专家库"' + (on ? ' checked' : '') + '>' +
+        '<span class="bz-knob" aria-hidden="true"></span>' +
+        '<b>' + p.displayName + '</b>' +
+        '<span class="bz-note">' + p.id + '</span>' +
+        (on ? '<span class="bz-tag bz-tag--ok">已启用</span>' : '<span class="bz-tag bz-tag--disabled">未启用</span>') +
+        '</label>'
+    })
+    switchesEl.innerHTML = html
+  }
+
+  function checkedIds () {
+    return PROVIDERS.filter(function (p) { return state.panel.checked[p.id] }).map(function (p) { return p.id })
+  }
+
+  function nameOccurrences () {
+    var map = {}
+    checkedIds().forEach(function (id) {
+      var list = EXPERTS[id] || []
+      var phase = state.panel.phase[id]
+      if (phase !== 'ready') return
+      list.forEach(function (ex) {
+        map[ex.name] = (map[ex.name] || 0) + 1
+      })
+    })
+    return map
+  }
+
+  function renderExpertArea () {
+    var ids = checkedIds()
+    if (!ids.length) {
+      expertArea.innerHTML =
+        '<div class="bz-empty">' +
+        '<h4>尚未选择专家库</h4> <span class="bz-tag bz-tag--empty">空数据</span>' +
+        '<p>勾选上方任意一个专家库后，这里会按库分组并列显示专家；也可以直接选用内置的 WorkBuddy。</p>' +
+        '<button class="bz-btn bz-btn--primary" id="pickWorkbuddy" type="button">选择 WorkBuddy</button>' +
+        '</div>'
+      return
+    }
+    var occ = nameOccurrences()
+    var html = '<div class="bz-groups">'
+    ids.forEach(function (id) {
+      var p = meta(id)
+      var phase = state.panel.phase[id]
+      var errCls = phase === 'error' ? ' bz-group--error' : ''
+      html += '<section class="bz-group' + errCls + '">'
+      html += '<div class="bz-group-head"><span class="bz-gname">' + p.displayName +
+        ' <span class="bz-tag bz-tag--readonly">' + p.id + '</span>' +
+        (phase === 'loading' ? '<span class="bz-tag bz-tag--loading">加载中</span>' : '') +
+        (phase === 'error' ? '<span class="bz-tag bz-tag--error">出错</span>' : '') +
+        '</span>'
+      if (phase === 'ready') {
+        html += '<button class="bz-btn bz-btn--sm bz-btn--ghost" data-replay-group="' + id + '" type="button">重放加载态</button>'
+      }
+      html += '</div>'
+
+      if (phase === 'loading') {
+        html += '<div class="bz-group-body">' +
+          '<div class="bz-skel bz-skel--w80"></div><div class="bz-skel bz-skel--w60"></div><div class="bz-skel bz-skel--w80"></div>' +
+          '<p class="bz-note" style="margin:8px 0 0">只加载本分区；其他库的条目与状态不受影响。</p>' +
+          '</div>'
+      } else if (phase === 'error') {
+        html += '<div class="bz-group-body bz-group-body--error">' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">' +
+          '<span class="bz-tag bz-tag--error">出错</span>' +
+          '<span class="bz-val">' + (state.panel.message[id] || '未知错误') + '</span></div>' +
+          '<p class="bz-note" style="margin:0 0 8px">只有本分区报错：其他专家库照常显示，本分区不隐藏也不替换为空白。</p>' +
+          '<button class="bz-btn bz-btn--sm bz-btn--primary" data-retry-group="' + id + '" type="button">重试</button>' +
+          '</div>'
+      } else {
+        var q = (state.panel.search[id] || '').trim()
+        var cat = state.panel.cat[id] || 'all'
+        var chips = CATS.map(function (c) {
+          return '<button class="bz-chip" type="button" data-cat="' + id + '" data-key="' + c.key + '"' +
+            ' aria-pressed="' + (cat === c.key ? 'true' : 'false') + '">' + c.label + '</button>'
+        }).join('')
+        var items = (EXPERTS[id] || []).filter(function (ex) {
+          if (cat !== 'all' && ex.cat !== cat) return false
+          if (!q) return true
+          return (ex.name + ' ' + ex.desc).toLowerCase().indexOf(q.toLowerCase()) !== -1
+        })
+        var body = ''
+        if (!items.length) {
+          body = '<div class="bz-state-block"><b>本库无匹配结果</b> <span class="bz-tag bz-tag--empty">空数据</span>' +
+            '<div class="bz-row"><span class="bz-note">筛选只在 <code>' + id + '</code> 分区内生效，不影响其他库。</span></div></div>'
+        } else {
+          items.forEach(function (ex) {
+            var prefix = occ[ex.name] > 1 ? '<span class="bz-tag bz-tag--warn">' + p.displayName + ' ·</span>' : ''
+            var isCurrent = state.panel.current === id + '/' + ex.id
+            body += '<div class="bz-entry">' +
+              '<div>' +
+              '<div class="bz-entry-name">' + prefix + '<span>' + ex.name + '</span>' +
+              (isCurrent ? '<span class="bz-tag bz-tag--readonly">当前使用</span>' : '') + '</div>' +
+              '<p class="bz-entry-desc">' + ex.desc + ' · ' + ex.skills + ' 个技能</p>' +
+              '</div>' +
+              '<div class="bz-entry-side">' +
+              (isCurrent
+                ? '<button class="bz-btn bz-btn--sm" disabled>已选</button>'
+                : '<button class="bz-btn bz-btn--sm bz-btn--primary" data-pick="' + id + '" data-expert="' + ex.id + '">选择</button>') +
+              '</div>' +
+              '</div>'
+          })
+        }
+        html += '<div class="bz-group-body">' +
+          '<div class="bz-tools"><input class="bz-input" type="search" aria-label="搜索 ' + p.displayName + ' 的专家" placeholder="搜索专家（本库内）"' +
+          ' data-search="' + id + '" value="' + (state.panel.search[id] || '').replace(/"/g, '&quot;') + '"></div>' +
+          '<div class="bz-chips">' + chips + '</div>' + body + '</div>'
+      }
+      html += '</section>'
+    })
+    html += '</div>'
+    expertArea.innerHTML = html
+  }
+
+  function renderSkillArea () {
+    var ids = checkedIds()
+    if (!ids.length) {
+      skillArea.innerHTML = '<div class="bz-state-block"><b>未选择专家库</b> <span class="bz-tag bz-tag--empty">空数据</span>' +
+        '<div class="bz-row"><span class="bz-note">技能区与专家区共用同一个活跃集；勾选专家库后按库分组显示两个来源。</span></div></div>'
+      return
+    }
+    var html = '<div class="bz-skillwrap">'
+    ids.forEach(function (id) {
+      var p = meta(id)
+      var data = SKILLS[id]
+      html += '<div class="bz-skillcol">'
+      html += '<div class="bz-skillcol-head"><span>' + p.displayName + ' <span class="bz-tag bz-tag--readonly">' + p.id + '</span></span></div>'
+      html += '<div class="bz-skillcol-body">'
+
+      // 技能市场
+      html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' +
+        '<b style="font-size:13px">技能市场</b><span class="bz-tag bz-tag--readonly">来源：skillMarket</span></div>'
+      if (!declares(p, 'skillMarket')) {
+        html += '<div class="bz-state-block"><b>未声明技能市场</b><div class="bz-row"><span class="bz-note">调用该域返回 <code>BAZAAR_CAPABILITY_UNDECLARED</code>。</span></div></div>'
+      } else {
+        data.skillMarket.forEach(function (s) {
+          var right = ''
+          if (s.conflictBy) {
+            right = '<span class="bz-tag bz-tag--disabled">禁用：已被 ' + s.conflictBy + ' 安装</span>' +
+              '<button class="bz-btn bz-btn--sm" disabled>安装</button>'
+          } else if (s.installed) {
+            right = '<span class="bz-tag bz-tag--ok">已安装</span>' +
+              '<span class="bz-tag bz-tag--readonly">只读</span>' +
+              '<button class="bz-btn bz-btn--sm" data-reinstall="' + id + '">重装</button>'
+          } else {
+            right = '<button class="bz-btn bz-btn--sm bz-btn--primary" data-install="' + id + '">安装</button>'
+          }
+          html += '<div class="bz-entry">' +
+            '<div><div class="bz-entry-name"><span class="bz-mono">' + s.slug + '</span>' +
+            (s.conflictBy ? '<span class="bz-tag bz-tag--danger">冲突</span>' : '') + '</div>' +
+            '<p class="bz-entry-desc">' + s.desc + '</p>' +
+            (s.conflictBy ? '<p class="bz-note" style="margin:4px 0 0">冲突说明：目标目录已由 <code>' + s.conflictBy.toLowerCase() + '</code> 安装，跨库同名不覆盖、不加后缀。</p>' : '') +
+            '</div><div class="bz-entry-side">' + right + '</div></div>'
+        })
+      }
+
+      // 记忆市场
+      html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0 8px">' +
+        '<b style="font-size:13px">记忆市场</b><span class="bz-tag bz-tag--readonly">来源：memoryMarket</span></div>'
+      if (!declares(p, 'memoryMarket')) {
+        html += '<div class="bz-tools"><input class="bz-input" disabled aria-disabled="true" aria-describedby="mem-why" aria-label="搜索记忆（不可用）" placeholder="搜索记忆（不可用）">' +
+          '<span class="bz-tag bz-tag--disabled">禁用：未声明 memoryMarket</span></div>' +
+          '<p class="bz-note" style="margin:0">该 provider 未声明记忆市场能力，此处不显示条目列表，也不以「暂无条目」冒充空态。</p>'
+      } else if (!data.memoryMarket.available) {
+        html += '<div class="bz-tools"><input class="bz-input" disabled aria-disabled="true" aria-describedby="mem-why" aria-label="搜索记忆（不可用）" placeholder="搜索记忆（不可用）">' +
+          '<span class="bz-tag bz-tag--disabled">禁用：来源不可用</span></div>' +
+          '<div class="bz-state-block"><b>记忆市场不可用</b> <span class="bz-tag bz-tag--warn">不可用</span>' +
+          '<div class="bz-row"><span class="bz-note">' + data.memoryMarket.reason + '</span></div></div>'
+      } else {
+        html += '<div class="bz-tools"><input class="bz-input" type="search" aria-label="搜索 ' + p.displayName + ' 的记忆" placeholder="搜索记忆（本库内）">' +
+          '<span class="bz-tag bz-tag--ok">可用</span></div>'
+        data.memoryMarket.items.forEach(function (m) {
+          html += '<div class="bz-entry"><div><div class="bz-entry-name"><span class="bz-mono">' + m.slug + '</span>' +
+            '<span class="bz-tag bz-tag--readonly">记忆</span></div>' +
+            '<p class="bz-entry-desc">' + m.desc + '</p></div>' +
+            '<div class="bz-entry-side"><button class="bz-btn bz-btn--sm" data-install="' + id + '">启用</button></div></div>'
+        })
+      }
+      html += '</div></div>'
+    })
+    html += '</div>'
+    skillArea.innerHTML = html
+  }
+
+  function renderPanelAll () {
+    renderSwitches()
+    renderExpertArea()
+    renderSkillArea()
+  }
+
+  // 屏 B 事件
+  switchesEl.addEventListener('change', function (e) {
+    var cb = e.target.closest('[data-switch]')
+    if (!cb) return
+    var id = cb.dataset.switch
+    state.panel.checked[id] = cb.checked
+    hideToast(panelToast)
+    renderPanelAll()
+  })
+
+  expertArea.addEventListener('click', function (e) {
+    var t = e.target.closest('button')
+    if (!t) return
+    if (t.id === 'pickWorkbuddy') {
+      state.panel.checked.workbuddy = true
+      renderPanelAll()
+      return
+    }
+    var id
+    if ((id = t.dataset.retryGroup)) {
+      state.panel.phase[id] = 'loading'
+      renderPanelAll()
+      later('group-' + id, 900, function () {
+        state.panel.phase[id] = 'ready'
+        delete state.panel.message[id]
+        renderPanelAll()
+        showToast(panelToast, '重试成功：' + meta(id).displayName + ' 已恢复')
+      })
+      return
+    }
+    if ((id = t.dataset.replayGroup)) {
+      state.panel.phase[id] = 'loading'
+      renderPanelAll()
+      later('group-replay-' + id, 1200, function () {
+        state.panel.phase[id] = 'ready'
+        renderPanelAll()
+      })
+      return
+    }
+    if ((id = t.dataset.cat)) {
+      state.panel.cat[id] = t.dataset.key
+      renderExpertArea()
+      return
+    }
+    if (t.dataset.pick) {
+      state.panel.current = t.dataset.pick + '/' + t.dataset.expert
+      renderExpertArea()
+      showToast(panelToast, '已选择 ' + meta(t.dataset.pick).displayName + ' 的专家；只写入该库分区')
+    }
+  })
+
+  expertArea.addEventListener('input', function (e) {
+    var input = e.target.closest('[data-search]')
+    if (!input) return
+    state.panel.search[input.dataset.search] = input.value
+    var id = input.dataset.search
+    renderExpertArea()
+    // 重新渲染后恢复焦点与光标位置
+    var again = expertArea.querySelector('[data-search="' + id + '"]')
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length) }
+  })
+
+  skillArea.addEventListener('click', function (e) {
+    var t = e.target.closest('button')
+    if (!t) return
+    if (t.dataset.install) {
+      showToast(panelToast, '已安装到 <projectRoot>/.dsh/skills/（示意，元数据记 providerId=' + t.dataset.install + '）')
+      return
+    }
+    if (t.dataset.reinstall) {
+      showToast(panelToast, '同库重装视为升级（幂等覆盖，示意）')
+    }
+  })
+
+  // ── 用户确认勾选 ────────────────────────────────────────────────────────
+  var ackToast = document.getElementById('ackToast')
+  function renderAck () {
+    var a = document.getElementById('ackA').checked
+    var b = document.getElementById('ackB').checked
+    if (a && b) showToast(ackToast, '两屏均已勾选（仅本地记录）；正式确认仍需在评审回复中给出')
+    else if (a) showToast(ackToast, '已勾选屏 A；屏 B 待确认')
+    else if (b) showToast(ackToast, '已勾选屏 B；屏 A 待确认')
+    else hideToast(ackToast)
+  }
+  document.getElementById('ackA').addEventListener('change', renderAck)
+  document.getElementById('ackB').addEventListener('change', renderAck)
+
+  // ── 首屏渲染 + 自动演示加载态 ────────────────────────────────────────────
+  renderSettings()
+  renderPanelAll()
+
+  later('boot-settings-demo', 1400, function () {
+    if (state.settings.phase.demo === 'loading') {
+      state.settings.phase.demo = 'ready'
+      renderSettings()
+    }
+  })
+  later('boot-group-workbuddy', 1100, function () {
+    if (state.panel.phase.workbuddy === 'loading') {
+      state.panel.phase.workbuddy = 'ready'
+      renderPanelAll()
+    }
+  })
+})()
+</script>
+</body>
+</html>
