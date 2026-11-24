@@ -1,0 +1,193 @@
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤1：注册表列举是 provider 状态的唯一取值来源（溯源 spec:provider-registry#设置页与面板的 provider 区域由注册表驱动并标注状态）
+# @name listProviders
+GET {{BASE_URL}}/dsh-bazaar/providers?sessionId=bce4b8-api
+Content-Type: application/json
+
+> {%
+    client.test("列举返回已注册库并带 active 标记", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.ok === true, "列举应成功");
+        client.assert(Array.isArray(response.body.items) === true, "items 应为数组");
+        client.assert(response.body.items.length >= 1, "至少应有一个已注册库");
+        const first = response.body.items[0];
+        client.assert(typeof first.id === "string" && first.id.length > 0, "id 不可为空");
+        client.assert(typeof first.displayName === "string" && first.displayName.length > 0, "displayName 不可为空");
+        client.assert(typeof first.capabilities === "object" && first.capabilities !== null, "capabilities 必须回显");
+        client.assert(typeof first.active === "boolean", "active 必须是布尔值");
+        // 后续步骤用的库 id 来自本次响应，不写死
+        client.global.set("PROVIDER_ID", first.id);
+        client.global.set("PROVIDER_NAME", first.displayName);
+    });
+%}
+
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤2：按 providerId 读状态，凭据只回脱敏值、缓存目录落在该库自己的路径（溯源 spec:account-auth#凭据区界面状态语义）
+# @name providerStatus
+GET {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/status?sessionId=bce4b8-api
+Content-Type: application/json
+
+> {%
+    client.test("状态接口字段完整、凭据不回明文、缓存目录按库隔离", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        const body = response.body;
+        client.assert(body.ok === true, "状态应成功");
+        client.assert(body.provider.id === client.global.get("PROVIDER_ID"), "provider.id 与列举结果不一致");
+        client.assert(body.provider.displayName === client.global.get("PROVIDER_NAME"), "displayName 与列举结果不一致");
+        client.assert(typeof body.credential.name === "string" && body.credential.name.length > 0, "凭据名必须推导出来");
+        client.assert(body.credential.name.indexOf("BAZAAR_") === 0, "凭据名应以 BAZAAR_ 开头：" + body.credential.name);
+        client.assert(typeof body.credential.configured === "boolean", "configured 必须是布尔值");
+        client.assert(typeof body.cache.dir === "string", "缓存目录必须回显");
+        client.assert(body.cache.dir.indexOf("providers/" + client.global.get("PROVIDER_ID") + "/cache") >= 0, "缓存目录必须落在该 provider 自己的目录下：" + body.cache.dir);
+        client.assert(typeof body.cache.entries === "number" && body.cache.entries >= 0, "缓存条目数必须是非负数字");
+        client.assert(typeof body.cache.bytes === "number" && body.cache.bytes >= 0, "缓存字节数必须是非负数字");
+        const raw = JSON.stringify(body);
+        // 脱敏口径：配置了凭据也只允许出现 • 掩码，不得出现明文令牌
+        if (body.credential.configured === true) {
+            client.assert(typeof body.credential.masked === "string" && body.credential.masked.length > 0, "已配置时 masked 不可为空");
+            client.assert(body.credential.masked.indexOf("•") >= 0, "masked 必须是掩码形态：" + body.credential.masked);
+        }
+        client.assert(raw.indexOf("Authorization") === -1, "状态响应不得回显 Authorization 头");
+    });
+%}
+
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤3：同一 providerId 下账号区读到的是该库自己的账号组（溯源 spec:account-auth#账号区界面状态语义）
+# @name providerAccounts
+GET {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts?sessionId=bce4b8-api
+Content-Type: application/json
+
+> {%
+    client.test("账号分组带 providerId 且只含本库", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.ok === true, "账号读取应成功");
+        const pid = client.global.get("PROVIDER_ID");
+        (response.body.items || []).forEach(function(item) {
+            client.assert(item.providerId === pid, "账号条目 providerId 必须是 " + pid + "，实际 " + item.providerId);
+        });
+        (response.body.groups || []).forEach(function(group) {
+            client.assert(group.providerId === pid, "分组 providerId 必须是 " + pid + "，实际 " + group.providerId);
+            client.assert(typeof group.status === "string", "分组必须带 status");
+        });
+    });
+%}
+
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤4：连接器读取按 provider 分组，条目带 providerId 与状态判定字段（溯源 spec:connector-market#连接器列表按 provider 分组并支持筛选）
+# @name providerConnectors
+GET {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/connectors?sessionId=bce4b8-api
+Content-Type: application/json
+
+> {%
+    client.test("连接器分组与条目均带 providerId，未授权状态可判定", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        const pid = client.global.get("PROVIDER_ID");
+        client.assert(Array.isArray(response.body.groups) === true, "groups 应为数组");
+        (response.body.items || []).forEach(function(item) {
+            client.assert(item.providerId === pid, "连接器条目 providerId 必须是 " + pid);
+            client.assert(typeof item.id === "string" && item.id.length > 0, "连接器 id 不可为空");
+        });
+    });
+%}
+
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤5：专家读取复用扁平路由的 provider 过滤，分组必须只回本库（溯源 spec:expert-market#交叉库同名以 provider 限定前缀区分）
+# @name providerExperts
+GET {{BASE_URL}}/dsh-bazaar/experts?sessionId=bce4b8-api&provider={{PROVIDER_ID}}&page=1&pageSize=24
+Content-Type: application/json
+
+> {%
+    client.test("provider 过滤生效，分组与条目 providerId 一致", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        const pid = client.global.get("PROVIDER_ID");
+        client.assert(Array.isArray(response.body.groups) === true, "groups 应为数组");
+        client.assert(response.body.groups.length === 1, "指定 provider 时只应回一组，实际 " + response.body.groups.length);
+        const group = response.body.groups[0];
+        client.assert(group.providerId === pid, "分组 providerId 不一致：" + group.providerId);
+        client.assert(group.status === "ok" || group.status === "error" || group.status === "undeclared", "分组 status 必须落在三种取值内：" + group.status);
+        if (group.status === "ok") {
+            (group.items || []).forEach(function(item) {
+                client.assert(item.providerId === pid, "条目 providerId 必须与分组一致");
+                client.assert(typeof item.id === "string" && item.id.length > 0, "专家 id 不可为空");
+            });
+        }
+    });
+%}
+
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤6：未注册 providerId 一律拒绝且给出可判定的错误码（溯源 spec:provider-registry#当前 provider 集合是唯一的取值来源）
+# @name unknownProvider
+GET {{BASE_URL}}/dsh-bazaar/providers/bce4b8-ghost/status?sessionId=bce4b8-api
+Content-Type: application/json
+
+> {%
+    client.test("未注册库拒绝而不是回空壳", function() {
+        client.assert(response.status >= 400, "期望 4xx/5xx，实际 " + response.status);
+        client.assert(response.body.ok === false, "必须标记失败");
+        client.assert(typeof response.body.code === "string" && response.body.code.length > 0, "必须带错误码");
+        client.assert(response.body.code.indexOf("BAZAAR_") === 0, "错误码必须带 BAZAAR_ 前缀：" + response.body.code);
+    });
+%}
+
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤1：界面上未选区域时由服务端兜底拒绝，且点名字段（溯源 spec:account-auth#登录区域必选且不预选）
+# @name loginWithoutRegion
+POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
+Content-Type: application/json
+
+{"providerId":"{{PROVIDER_ID}}","action":"login"}
+
+> {%
+    client.test("缺 region 被拒，字段级错误可锚定", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.ok === false, "必须标记失败");
+        client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
+        client.assert(response.body.field === "region", "必须点名 region 字段，实际 " + response.body.field);
+        client.assert(String(response.body.message).indexOf("登录区域必选") >= 0, "错误文案必须说明区域必选：" + response.body.message);
+    });
+%}
+
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤2：非法区域值同样被拒，且错误里回显收到的值（反例：大小写/未知站点）
+# @name loginWithBadRegion
+POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
+Content-Type: application/json
+
+{"providerId":"{{PROVIDER_ID}}","action":"login","region":"mars"}
+
+> {%
+    client.test("非法 region 被拒且回显原值", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
+        client.assert(response.body.field === "region", "必须点名 region 字段");
+        client.assert(String(response.body.message).indexOf("mars") >= 0, "错误文案必须回显收到的值：" + response.body.message);
+    });
+%}
+
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤3：path providerId 与 body providerId 不一致时不下发到 provider（溯源 spec:provider-registry#provider 路由以路径段定位）
+# @name providerIdMismatch
+POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
+Content-Type: application/json
+
+{"providerId":"bce4b8-other","action":"list"}
+
+> {%
+    client.test("路径段与请求体不一致直接拒绝", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.ok === false, "必须标记失败");
+        client.assert(response.body.code === "BAZAAR_PROVIDER_ID_MISMATCH", "期望 BAZAAR_PROVIDER_ID_MISMATCH，实际 " + response.body.code);
+        client.assert(String(response.body.message).indexOf(client.global.get("PROVIDER_ID")) >= 0, "错误文案必须写出路径段 id：" + response.body.message);
+    });
+%}
+
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤4：providerId 校验通过后动作真实落到 provider（list 动作不触发登录，只验证分组路由能下传）
+# @name accountListByGroupedRoute
+POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
+Content-Type: application/json
+
+{"providerId":"{{PROVIDER_ID}}","action":"list"}
+
+> {%
+    client.test("分组路由的账号动作落到 provider 并回账号列表", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        // list 动作直接回账号服务的结果（own/all/summary/pending），不额外包 ok
+        client.assert(Array.isArray(response.body.own) === true, "own 应为数组");
+        client.assert(Array.isArray(response.body.all) === true, "all 应为数组");
+        client.assert(typeof response.body.summary === "object" && response.body.summary !== null, "summary 必须回显");
+        client.assert(typeof response.body.summary.count === "number", "summary.count 必须是数字");
+        const raw = JSON.stringify(response.body);
+        client.assert(raw.indexOf("accessToken") === -1 && raw.indexOf("refreshToken") === -1, "账号列表不得回显令牌字段");
+    });
+%}
