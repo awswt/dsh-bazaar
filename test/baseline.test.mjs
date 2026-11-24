@@ -1,11 +1,15 @@
 /**
- * 基线守护：用例条数、逐文件语法、以及「源仓搬来的实现文件不许凭空多出或消失」。
+ * 基线守护：用例条数、逐文件语法、文件清点，以及「谁在 prettier 的强制面内」。
  *
  * 1.1 记录过入仓基线（226 条用例 / 49 个实现文件 / 16,513 行）。后续每组的改动都要能
  * 对着这份数字说话：条数只增不减，文件清单变化必须是显式的新增（provider 化会加目录）。
+ *
+ * 组 5 追加的一条是双向的：`.prettierignore` 既是「存量免检名单」，也是「新文件登记表」。
+ * 只做单向检查（新文件在强制面内）会漏掉另一半——重写过的存量文件忘记从名单里划掉时，
+ * 它既没被 prettier 守，也没人发现。
  */
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +21,7 @@ const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
  *
  * 必须是递归的：组 2 起实现分层了（`lib/provider/`、`lib/providers/<id>/`，
  * 组 3/4 还会加更多），单层 readdir 会「扫过目录、没扫到文件」，让这道地基变成假绿灯——
- * 文件真被删掉时它也照样绿。
+ * 文件真被删掉时它也照样照绿。
  */
 function collectSources(dir) {
   const out = []
@@ -81,3 +85,124 @@ test('no stray CRLF made it into the tracked sources', () => {
     }
   }
 })
+
+/* ------------------------------------------------------------------ *
+ * prettier 强制面：清单 = 登记表
+ * ------------------------------------------------------------------ */
+
+/**
+ * 把 `.prettierignore` 读成「目录前缀」与「精确文件」两张表。
+ *
+ * 这里刻意不实现通配：清单里出现 `*` 时直接判违规，因为通配会让两种错误同时隐形——
+ * 新文件自动被排除（没人发现它没进强制面），存量文件被顺手豁免（没人发现它没被守）。
+ */
+function readIgnoreList() {
+  const text = readFileSync(path.join(root, '.prettierignore'), 'utf8')
+  const dirs = []
+  const files = []
+  const wildcards = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) continue
+    if (line.includes('*') || line.includes('{') || line.includes('?')) {
+      wildcards.push(line)
+      continue
+    }
+    const normalized = line.replace(/^\//, '')
+    if (line.endsWith('/')) dirs.push(normalized)
+    else files.push(normalized)
+  }
+  return { dirs, files, wildcards }
+}
+
+/** 相对路径是否被清单排除（= 免检）。 */
+function ignoredBy(rel, list) {
+  if (list.files.includes(rel)) return true
+  return list.dirs.some((dir) => rel === dir.slice(0, -1) || rel.startsWith(dir))
+}
+
+/** 本仓（组 2 起）新建/重写的文件：必须在强制面内。 */
+const ENFORCED_BY_CONSTRUCTION = [
+  'lib/client.js',
+  'lib/provider/status.js',
+  'lib/provider/routes.js',
+  'lib/provider/registry.js',
+  'lib/provider/contract.js',
+  'lib/provider/active-set.js',
+  'test/hook-order.test.mjs',
+  'test/settings-card.test.mjs',
+  'test/route-lifecycle.test.mjs',
+  'test/baseline.test.mjs',
+  'test/ui-harness.mjs',
+  'test/two-screen-e2e.test.mjs',
+  'docs/e2e-baseline.md',
+]
+
+test('新建与重写的文件都在 prettier 强制面内（含反向控制）', () => {
+  const list = readIgnoreList()
+  assert.deepEqual(list.wildcards, [], '免检名单不接受通配：它必须逐条点名')
+
+  // 反向控制：一个真实存量文件必须落在免检面，否则「新文件不在免检面」可能只是因为整张表读空了。
+  assert.equal(ignoredBy('lib/auth.js', list), true, '存量文件 lib/auth.js 应仍在免检名单里')
+  // 反向控制：清单里没登记的路径必须判成「在强制面内」，避免判定函数恒真。
+  assert.equal(ignoredBy('lib/brand-new-module.js', list), false)
+
+  const missing = ENFORCED_BY_CONSTRUCTION.filter((rel) => {
+    assert.equal(existsSync(path.join(root, rel)), true, `${rel} 不存在，登记表已过期`)
+    return ignoredBy(rel, list)
+  })
+  assert.deepEqual(
+    missing,
+    [],
+    `这些文件被 .prettierignore 排除了，等于既没被 prettier 守也没人发现：\n${missing.join('\n')}`,
+  )
+})
+
+test('免检名单与磁盘双向对账：没有漏登记，也没有已重写的死条目', () => {
+  const list = readIgnoreList()
+  const walked = [
+    ...collectSources('lib'),
+    ...collectSources('scripts'),
+    ...collectSources('test'),
+    ...collectDocs(),
+    'README.md',
+    'AGENTS.md',
+  ]
+
+  // 死条目：清单里点名了，磁盘上却找不到——通常是文件改名/删除后忘了划掉。
+  const dead = list.files.filter((rel) => !existsSync(path.join(root, rel)))
+  assert.deepEqual(dead, [], `免检名单里有已不存在的文件，请划掉：\n${dead.join('\n')}`)
+
+  // 漏登记的反面：被免检的文件必须就是清单点名的文件（目录前缀下的存量按目录整体免检）。
+  const ignored = walked.filter((rel) => ignoredBy(rel, list))
+  const named = new Set(list.files)
+  const unorthodox = ignored.filter((rel) => {
+    if (named.has(rel)) return false
+    return !list.dirs.some((dir) => rel.startsWith(dir) && !isThisGroupsRewrite(rel))
+  })
+  assert.deepEqual(
+    unorthodox,
+    [],
+    `这些文件被某个目录前缀顺手豁免，但它们不是该目录的存量：\n${unorthodox.join('\n')}`,
+  )
+})
+
+/** 组 5 重写过的文件：不允许被「目录整体免检」这种模糊理由塞回免检面。 */
+function isThisGroupsRewrite(rel) {
+  return (
+    rel === 'docs/e2e-baseline.md' || rel === 'docs/releases/v1.0.0.md' || rel === 'lib/client.js'
+  )
+}
+
+function collectDocs() {
+  const out = []
+  const walk = (rel) => {
+    for (const entry of readdirSync(path.join(root, rel), { withFileTypes: true })) {
+      const next = `${rel}/${entry.name}`
+      if (entry.isDirectory()) walk(next)
+      else if (entry.name.endsWith('.md')) out.push(next)
+    }
+  }
+  walk('docs')
+  return out.sort()
+}

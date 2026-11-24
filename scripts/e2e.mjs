@@ -13,6 +13,7 @@
  *   node scripts/e2e.mjs --skip-install      # reuse an existing profile
  *   node scripts/e2e.mjs --keep-home         # do not delete the isolated home
  *   node scripts/e2e.mjs --plan connector-only
+ *   node scripts/e2e.mjs --plan ui           # 两屏界面（离线，无安装、无模型、无外网）
  *
  * Exit code is 0 only when every check passes; the machine-readable verdict is
  * written to `<out>/report.json` (default `.workbuddy/e2e/run`).
@@ -25,6 +26,13 @@
  *   4. `action=skills` lists the skills actually on disk
  *   5. `action=expert` puts the persona block into the NEXT system prompt
  *      and merges the expert's own skills into the catalog
+ *
+ * `--plan ui` is deliberately a different shape: it installs nothing, starts no
+ * model and touches no network. It runs `test/two-screen-e2e.test.mjs`, which
+ * serves a fake bazaar over a loopback `node:http` server and drives the REAL
+ * `lib/client.js` components (设置页 / 会话面板) against it, then records that
+ * suite's `# pass` / `# fail` counts in the same `report.json`. It is the only
+ * plan that can run on a machine with no DSH install at all.
  *
  * It never touches the real `DSH_HOME`: every run gets its own directory under
  * the OS temp dir, and the token vaults are copied in only when asked, because a
@@ -133,7 +141,8 @@ const HELP = `dsh-bazaar end-to-end reproduction
 
   --source <github|local|file:PATH>  where to install the plugin from (default: github)
   --profile <name>                   profile name inside the isolated home (default: wbhelper-e2e)
-  --plan <full|connector-only|skills-only>  which probe steps to run (default: full)
+  --plan <full|connector-only|skills-only|ui>  which probe steps to run (default: full)
+                                     ui = 两屏界面离线回放（不安装、不起模型、不出网）
   --out <dir>                        where report.json and request dumps go
   --dsh-home <dir>                   reuse a specific home instead of a temp one
   --cli <path>                       DSH CLI entry (default: the installed dsh package)
@@ -235,6 +244,45 @@ function createChecks() {
     get failed() {
       return results.filter(entry => !entry.ok).length
     },
+  }
+}
+
+/* ─────────────────────────── UI two-screen replay ───────────────────────── */
+
+/**
+ * `--plan ui`：跑两屏界面回放，离线。
+ *
+ * 这一阶段的存在理由是「验收形态」而不是「覆盖更多代码」：设置页与会话面板的
+ * 状态语义（未选区域不发请求、开关组允许全空、冲突条目禁用安装、只读凭据）只有
+ * 真渲染才看得见，静态扫描看不见；而它们又不需要真实上游，`test/two-screen-e2e.test.mjs`
+ * 自带一台 loopback 假服务。所以这里既不起模型、也不装插件、更不出网。
+ *
+ * 判定只认子进程的 TAP 汇总行：`# pass N` / `# fail M`。用例自己怎么写不算数，
+ * 退出码也一样——node --test 在「有用例失败」与「测试文件加载失败」两种情况下都返回 1，
+ * 汇总行才能区分「跑完了但有红」与「压根没跑起来」。
+ */
+async function runUiPlan({ outDir, timeoutMs, verbose }) {
+  const testFile = 'test/two-screen-e2e.test.mjs'
+  const run0 = await run(process.execPath, ['--test', testFile], {
+    cwd: REPO,
+    timeoutMs: timeoutMs ?? 180000,
+    verbose,
+  })
+  const combined = `${run0.stdout}\n${run0.stderr}`
+  const passCount = /^# pass (\d+)$/m.exec(combined)
+  const failCount = /^# fail (\d+)$/m.exec(combined)
+  await fsp.writeFile(path.join(outDir, 'ui-stdout.txt'), run0.stdout, 'utf8')
+  await fsp.writeFile(path.join(outDir, 'ui-stderr.txt'), run0.stderr, 'utf8')
+  return {
+    ok: run0.code === 0 && passCount !== null && failCount !== null && Number(failCount[1]) === 0,
+    code: run0.code,
+    timedOut: run0.timedOut === true,
+    pass: passCount === null ? null : Number(passCount[1]),
+    fail: failCount === null ? null : Number(failCount[1]),
+    detail: passCount === null || failCount === null
+      ? `无法解析 TAP 汇总行（exit ${run0.code}）：${combined.trim().split('\n').slice(-6).join(' | ')}`
+      : `${passCount[1]} passed / ${failCount[1]} failed`,
+    tail: combined.trim().split('\n').slice(-20).join('\n'),
   }
 }
 
@@ -533,6 +581,42 @@ async function main() {
   }
 
   const checks = createChecks()
+
+  // `--plan ui` 走的是离线验收：不装插件、不起模型、不需要 DSH CLI。
+  // 因此它必须排在「找 CLI」之前，否则一台干净机器上这条路径根本跑不到。
+  if (options.plan === 'ui') {
+    const outDirUi = options.outDir
+    await fsp.rm(outDirUi, { recursive: true, force: true })
+    await fsp.mkdir(outDirUi, { recursive: true })
+    const ui = await runUiPlan({ outDir: outDirUi, timeoutMs: options.timeoutMs, verbose: options.verbose })
+    if (ui.ok === true) checks.pass('两屏界面回放（离线）', `test/two-screen-e2e.test.mjs: ${ui.detail}`)
+    else checks.fail('两屏界面回放（离线）', ui.detail)
+    await fsp.writeFile(
+      path.join(outDirUi, 'report.json'),
+      JSON.stringify(
+        {
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          repo: REPO,
+          plan: 'ui',
+          steps: [{ step: 'ui-two-screen', ...ui }],
+          checks: checks.results,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    )
+    const uiFailed = checks.failed
+    log(
+      uiFailed === 0
+        ? `ALL CHECKS PASSED (${checks.results.length}) — report: ${path.join(outDirUi, 'report.json')}`
+        : `${uiFailed} CHECK(S) FAILED — report: ${path.join(outDirUi, 'report.json')}`,
+    )
+    process.exitCode = uiFailed === 0 ? 0 : 1
+    return
+  }
+
   const cli = options.cli ?? defaultCli()
   if (cli === null || !fs.existsSync(cli)) {
     warn('cannot find the DSH CLI; pass --cli <path to @deepseek-ai/dsh/lib/bin.js>')
@@ -550,7 +634,7 @@ async function main() {
   const planKey = options.plan
   const plan = PROMPTS[planKey]
   if (plan === undefined) {
-    warn(`unknown --plan ${planKey}; known: ${Object.keys(PROMPTS).join(', ')}`)
+    warn(`unknown --plan ${planKey}; known: ${[...Object.keys(PROMPTS), 'ui'].join(', ')}`)
     process.exitCode = 2
     return
   }

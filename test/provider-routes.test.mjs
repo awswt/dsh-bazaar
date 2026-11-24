@@ -221,9 +221,21 @@ test('GET /providers/<id> 命中已注册库，未注册给 PROVIDER_UNKNOWN 而
   const tooDeep = await call(
     setup.server,
     'prefix ' + PROVIDER_PREFIX,
+    fakeRequest('GET', PROVIDER_PREFIX + '/demo/ghost'),
+  )
+  assert.equal(
+    tooDeep.json().code,
+    CODES.PARAM_INVALID,
+    '未识别的子段不静默当单条查询：给 PARAM_INVALID 并列出支持的分组路由',
+  )
+  // /providers/<id>/experts 是组 5 引入的分组读路由；reads 缺席时是 503，而不是被误当作单条查询。
+  const grouped = await call(
+    setup.server,
+    'prefix ' + PROVIDER_PREFIX,
     fakeRequest('GET', PROVIDER_PREFIX + '/demo/experts'),
   )
-  assert.equal(tooDeep.json().code, CODES.PARAM_INVALID, '子段留给组 3/4 的分组路由，这里不误吞')
+  assert.equal(grouped.statusCode, 503, grouped.body)
+  assert.equal(grouped.json().code, CODES.PROVIDER_THROWN)
 })
 
 test('provider 写路由：路径段与请求体 providerId 不一致被拦下，两个 provider 都不写', async () => {

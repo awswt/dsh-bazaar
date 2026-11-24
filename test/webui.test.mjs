@@ -74,6 +74,22 @@ function makeHarness(options = {}) {
       return { installed: true, accountCount: 3, usableAccountCount: 3 }
     },
   }
+  // 账号服务是注入依赖：这里只记「被以什么 region 调过」，好让登录区域的必选
+  // 既能验证「被拒绝」，也能验证「合法值真的落到服务上」。
+  const accounts = {
+    async start(region) {
+      calls.push(['accounts.start', region])
+      return { loginId: 'login-' + region, verificationUri: 'https://example.invalid/' + region, region }
+    },
+    async list() {
+      return { available: true, own: [], all: [], pending: [], summary: { count: 0, ownCount: 0, usableCount: 0, dir: '/tmp/bazaar' } }
+    },
+    poll: async () => ({ done: false }),
+    cancel: () => ({ cancelled: true }),
+    refresh: async () => ({}),
+    remove: async () => ({ removed: true }),
+    importLegacy: async () => ({ imported: 0 }),
+  }
   const portal = { async available() { return true } }
   const ctx = {
     inject(names, callback) {
@@ -128,6 +144,7 @@ function makeHarness(options = {}) {
     market,
     bundles,
     connector,
+    accounts,
     portal,
     mnemon: options.mnemon,
     getViews: () => views,
@@ -276,4 +293,39 @@ test('a failing mnemon detector degrades to unavailable instead of failing the r
   assert.equal(result.body.state.mnemon.available, false)
   // 其余字段不能被这次失败带塌。
   assert.equal(result.body.state.expert.displayName, '演示专家')
+})
+
+test('账号登录缺 region 时由服务端以 BAZAAR_PARAM_INVALID 拒绝，且不落到账号服务', async () => {
+  // 屏 A 的「未选区域不发请求」只是界面自保；绕过界面直接 POST 必须同样被拒，
+  // 否则「必选」就只是文案，服务端仍会拿着 undefined 去猜令牌该发往哪套上游。
+  const { routes, calls } = makeHarness()
+  const handler = routes.get('/dsh-bazaar/accounts/action')
+  assert.equal(typeof handler, 'function')
+
+  const missing = await call(handler, 'POST', '/dsh-bazaar/accounts/action', { action: 'start' })
+  assert.equal(missing.status, 400)
+  assert.equal(missing.body.code, 'BAZAAR_PARAM_INVALID')
+  assert.equal(missing.body.field, 'region')
+  assert.deepEqual(missing.body.admitted, ['cn', 'global'])
+  // 失败信封的口径与 provider 层一致：{ ok:false, code, message, ...details }。
+  assert.match(missing.body.message, /登录区域必选/)
+
+  const bogus = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
+    action: 'start',
+    region: 'mars',
+  })
+  assert.equal(bogus.status, 400)
+  assert.equal(bogus.body.field, 'region')
+  assert.match(bogus.body.message, /"mars"/)
+
+  // 反向控制：两次被拒期间账号服务一次都没被调用；只有合法区域才真的开始登录。
+  assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [])
+
+  const ok = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
+    action: 'start',
+    region: 'global',
+  })
+  assert.equal(ok.status, 200)
+  assert.equal(ok.body.ok, true)
+  assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [['accounts.start', 'global']])
 })

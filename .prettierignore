@@ -1,5 +1,11 @@
-# Prettier 的强制面 = 未被这里排除的文件。纪律：源仓搬来的「存量」逐个点名排除，
-# 本组新建的文件一律留在强制面内（组 5 的静态扫描用例会断言"新增文件都在强制面内"）。
+# Prettier 的强制面 = 未被这里排除的文件。
+#
+# 纪律：源仓搬来的「存量」逐个点名排除，本仓新建或本组重写的文件一律留在强制面内。
+# `test/baseline.test.mjs` 会双向核对这份清单——凡是能被 prettier 格式化的源文件，
+# 要么在强制面内被 `prettier --check` 守，要么在这里被逐个点名；两边都够不着的文件
+# 会被判成「漏登记」，重写了却没从清单里划掉的存量文件同样会被判成违规。
+# 因此清单里**只允许精确路径与目录**，不接受 `*` 之类通配：通配会让「新文件自动获得
+# 免检」和「存量文件被悄悄豁免」都变得不可见。
 node_modules/
 openspec/
 .agents/
@@ -10,18 +16,15 @@ coverage/
 package-lock.json
 eslint-suppressions.json
 
-# --- 存量：lib/ 20 个模块（改名是逐条替换，整文件格式化会把 diff 变成噪声）---
+# --- 存量：lib/ 中未在本仓重写的模块（改名是逐条替换，整文件格式化会把 diff 变成噪声）---
 /lib/auth.js
 /lib/bundle.js
-/lib/client.js
 /lib/connector-flow.js
 /lib/connector.js
 /lib/connectors.js
 /lib/index.js
-/lib/market.js
 /lib/mcp-patch.js
 /lib/mnemon.js
-/lib/portal.js
 /lib/session-plugin.js
 /lib/session.js
 /lib/skill-install.js
@@ -32,7 +35,7 @@ eslint-suppressions.json
 /lib/wb-vault.js
 /lib/webui.js
 
-# --- 存量：test/ 22 个用例文件与 3 个 e2e 辅助模块 ---
+# --- 存量：test/ 中未在本仓重写的用例文件与 e2e 辅助模块 ---
 /test/connector-controller.test.mjs
 /test/connector-flow.test.mjs
 /test/connector-gate.test.mjs
@@ -45,30 +48,27 @@ eslint-suppressions.json
 /test/e2e-helpers.test.mjs
 /test/fake-model-e2e.mjs
 /test/fake-model-expert-e2e.mjs
-/test/hook-order.test.mjs
 /test/host-integration.mjs
 /test/mcp-patch.test.mjs
 /test/mnemon.test.mjs
 /test/portal-market.test.mjs
 /test/release-script.test.mjs
-/test/route-lifecycle.test.mjs
-/test/settings-card.test.mjs
 /test/skill-install.test.mjs
 /test/wb-accounts.test.mjs
 /test/wb-login.test.mjs
 /test/wb-vault.test.mjs
 /test/webui.test.mjs
 
-# --- 存量：scripts/ 四个搬来的脚本（quality-gate.mjs 是新写的，受强制）---
+# --- 存量：scripts/ 中搬来的脚本（quality-gate.mjs 与 normalize-eol 之外的改动见各组任务）---
 /scripts/e2e.mjs
 /scripts/normalize-eol.mjs
 /scripts/release.mjs
 /scripts/spawn-util.mjs
 
-# --- 0.x 遗留文档与截图（1.7 删除、组 5 重写后再纳入）---
-/docs/
+# --- 0.x 遗留文档（组 5 重写 README / e2e 基线后，只剩这两份仍属存量）---
+/docs/architecture.md
+/docs/provider-integration.md
 /CHANGELOG.md
-/README.md
 /DESIGN.md
 /cordis.patch.yml
 /.gitignore
