@@ -106,11 +106,20 @@ spec 定义「必须做到什么」。
 
 ## 6. 后续版本 Roadmap（1.0.0 刻意不交付）
 
-以下能力 1.0.0 明确不提供，避免被误当成遗漏：
+以下四项是 1.0.0 明确不交付、留到 1.1.0 的能力，与 `design.md` 的
+Migration Plan「1.1.0 Roadmap」逐条对齐：
 
-- **写宿主 MCP 配置 / 重载宿主**：`copy-config` 只生成可复制文本，不写宿主配置、不触发重载。
-- **自动打开与轮询上游 OAuth 授权页**：授权交接产出可点开的 URL 与状态，自动跳转/轮询不在本版。
-- **旧插件 vault 的自动迁移**：不探测、不搬迁 `dsh-connect-workbuddy` 的目录。
-- **多账号自动轮换与故障转移**：本版只做单账号登录/刷新/删除，不做智能切换。
-- **连接器的自动安装 / 卸载**：目录只读与授权状态可查，安装交给上游管理页。
-- **第三方 provider 的官方内置实现**：注册契约开放，但 1.0.0 只随包提供 workbuddy 一家。
+1. **连接器「一键写入宿主配置并重载」**：复用保留的 `lib/mcp-patch.js`
+   （server 名规范化、托管字段、`upsertMcpServers`/`setMcpDisabled`/`removeMcpServer`）
+   与 `connectors.json` 的 `patchManaged` 字段，在 1.0.0 的七动作集
+   （`list|state|authorize|poll|cancel|copy-config|remove`）基础上扩入
+   `connect|repair|unbind|enable|disable`；门控仍在会话级工具层，写入后由
+   `tools/change` 触发重放。1.0.0 的 `copy-config` 只产出可复制文本片段，不写宿主配置、不重载。
+2. **provider 拆成可独立发布的包**（`@dsh-bazaar/provider-workbuddy`）：注册表契约不变，
+   `apiVersion` 仍为 `1`；届时再评估 `apiVersion: 2` 的边界。
+3. **第二个真实上游接入**：用 `examples/minimal-provider/` 的同一契约验证「零改动插件入口」。
+4. **记忆市场是否升格为独立 provider**：当前委托 `dsh-mnemon` 探测（见 `lib/mnemon.js:46-100`）。
+
+此外，下列能力 1.0.0 同样不提供：自动打开与轮询上游 OAuth 授权页（授权交接只产出
+可点开的 URL 与状态）、旧插件 `dsh-connect-workbuddy` 目录的自动迁移、多账号自动轮换
+与故障转移、连接器的自动安装 / 卸载（目录只读、授权状态可查，安装交给上游管理页）。
