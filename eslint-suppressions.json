@@ -1,0 +1,105 @@
+{
+  "lib/bundle.js": {
+    "no-useless-assignment": {
+      "count": 2
+    }
+  },
+  "lib/client.js": {
+    "no-unused-vars": {
+      "count": 17
+    }
+  },
+  "lib/connector.js": {
+    "no-useless-assignment": {
+      "count": 3
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "lib/connectors.js": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "no-useless-assignment": {
+      "count": 1
+    }
+  },
+  "lib/session.js": {
+    "no-useless-assignment": {
+      "count": 1
+    }
+  },
+  "lib/skill-install.js": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "lib/wb-vault.js": {
+    "no-unused-vars": {
+      "count": 1
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "lib/webui.js": {
+    "no-useless-assignment": {
+      "count": 4
+    }
+  },
+  "scripts/e2e.mjs": {
+    "no-console": {
+      "count": 2
+    },
+    "no-unused-vars": {
+      "count": 1
+    },
+    "no-useless-assignment": {
+      "count": 1
+    }
+  },
+  "scripts/normalize-eol.mjs": {
+    "no-console": {
+      "count": 4
+    }
+  },
+  "scripts/release.mjs": {
+    "no-console": {
+      "count": 30
+    }
+  },
+  "test/connector-layered.test.mjs": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "test/core.test.mjs": {
+    "no-unused-vars": {
+      "count": 1
+    }
+  },
+  "test/fake-model-e2e.mjs": {
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "test/fake-model-expert-e2e.mjs": {
+    "no-empty": {
+      "count": 1
+    },
+    "no-useless-escape": {
+      "count": 2
+    }
+  },
+  "test/mcp-patch.test.mjs": {
+    "no-regex-spaces": {
+      "count": 1
+    }
+  },
+  "test/portal-market.test.mjs": {
+    "no-unused-vars": {
+      "count": 3
+    }
+  }
+}

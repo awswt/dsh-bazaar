@@ -1,0 +1,241 @@
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤1：列表返回全部连接器（溯源 spec:connector-market#连接器列表按 provider 分组并支持筛选）
+# @name listAll
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"list"}
+
+> {%
+    client.test("列表返回 3 个连接器且结构完整", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.ok === true, "列表应成功");
+        client.assert(response.body.total === 3, "期望 total=3，实际 " + response.body.total);
+        client.assert(response.body.items.length === 3, "期望 3 条，实际 " + response.body.items.length);
+        const ids = response.body.items.map(function(i){ return i.id; }).sort();
+        client.assert(ids.join(",") === "github,notion,slack", "连接器 id 集合不一致：" + ids.join(","));
+        client.assert(response.body.items.every(function(i){ return i.authorized === false && i.bound === false; }), "初始状态应为未授权未绑定");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤2：状态与关键词同时筛选（AND）（溯源 spec:connector-market#连接器列表按 provider 分组并支持筛选）
+# @name listFiltered
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"list","query":"github","status":"enabled"}
+
+> {%
+    client.test("query 与 status 同时生效且字段回显一致", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.total === 1, "期望命中 1 条，实际 " + response.body.total);
+        client.assert(response.body.query === "github", "query 回显不一致");
+        client.assert(response.body.status === "enabled", "status 回显不一致");
+        client.assert(response.body.items[0].id === "github", "命中项应为 github");
+        client.assert(response.body.items[0].enabled === true, "github 应处于 enabled");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤3：详情双键定位且不泄露密钥（溯源 spec:connector-market#连接器详情按 provider 定位）
+# @name detail
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/session
+Content-Type: application/json
+
+{"providerId":"workbuddy","id":"github"}
+
+> {%
+    client.test("详情按 providerId+id 定位，不返回明文密钥", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.ok === true, "详情应成功");
+        client.assert(response.body.item.id === "github", "详情 id 不一致");
+        const raw = JSON.stringify(response.body);
+        client.assert(raw.indexOf("token") === -1 && raw.indexOf("credentials") === -1 && raw.indexOf("headers") === -1, "详情不应包含明文密钥字段");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤4：发起授权，单飞（溯源 spec:connector-market#OAuth 授权可发起、可轮询、可取消）
+# @name authorize
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"authorize","id":"github","authorizeUrl":"http://127.0.0.1:39320/mock-oauth"}
+
+> {%
+    client.test("authorize 返回 pending 会话", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.ok === true && response.body.action === "authorize", "授权发起应成功");
+        client.assert(response.body.state === "pending", "初始应为 pending");
+        client.assert(typeof response.body.sessionId === "string" && response.body.sessionId.indexOf("bz_") === 0, "sessionId 应以 bz_ 开头");
+        client.global.set("BZ_SESSION", response.body.sessionId);
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤5：重复发起复用同一会话（单飞）（溯源 spec:connector-market#OAuth 授权可发起、可轮询、可取消）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"authorize","id":"github","authorizeUrl":"http://127.0.0.1:39320/mock-oauth"}
+
+> {%
+    client.test("重复 authorize 复用未过期 pending 会话", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.sessionId === client.global.get("BZ_SESSION"), "单飞应复用同一 sessionId");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤6：poll 观察 pending，不落库为可用（溯源 spec:connector-market#连接器界面状态语义）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"poll","sessionId":"{{BZ_SESSION}}"}
+
+> {%
+    client.test("pending 阶段 poll 未完成且未绑定", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.done === false && response.body.state === "pending", "应为未完成 pending");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤7：测试夹具模拟上游回调 granted（隔离夹具，非生产路由）
+POST {{BASE_URL}}/__test/complete-auth
+Content-Type: application/json
+
+{"sessionId":"{{BZ_SESSION}}","outcome":"granted"}
+
+> {%
+    client.test("回调把会话推进为 granted", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.state === "granted", "回调后应为 granted");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤8：poll 观察 granted，即时落库（溯源 spec:connector-market#OAuth 授权可发起、可轮询、可取消）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"poll","sessionId":"{{BZ_SESSION}}"}
+
+> {%
+    client.test("granted 阶段 poll 完成并绑定", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.done === true && response.body.success === true && response.body.state === "granted", "应为成功 granted");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤9：后置校验——读盘断言授权状态持久化到 provider store（溯源 spec:connector-market#连接器界面状态语义）
+# @name diskCheckGranted
+GET {{BASE_URL}}/__test/store-file?providerId=workbuddy
+
+> {%
+    client.test("授权字段落盘完整且会话已消费", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.file.indexOf("providers/workbuddy/connectors.json") !== -1 || response.body.file.indexOf("providers\\workbuddy\\connectors.json") !== -1, "落点应为 providers/<providerId>/connectors.json");
+        const cfg = response.body.snapshot.configs.github;
+        client.assert(cfg !== undefined, "github 记录应已落盘");
+        client.assert(cfg.authorized === true && cfg.bound === true && cfg.enabled === true, "authorized/bound/enabled 应落盘为 true");
+        client.assert(cfg.authorizing !== true, "authorizing 应已清除");
+        client.assert(response.body.snapshot.sessions[client.global.get("BZ_SESSION")] === undefined, "poll 成功后应删除授权会话");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤10：详情再查，界面状态与落盘一致（溯源 spec:connector-market#连接器界面状态语义）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/session
+Content-Type: application/json
+
+{"providerId":"workbuddy","id":"github"}
+
+> {%
+    client.test("授权成功后查询状态为 connected", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.item.connected === true && response.body.item.bound === true && response.body.item.authorized === true, "详情应呈现已连接");
+        client.assert(response.body.item.authorizing === false, "详情不应仍处于 authorizing");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤11：copy-config 只产文本，不写宿主配置（溯源 spec:connector-market#复制配置片段只产出文本，不写宿主配置）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"copy-config","id":"github","headers":{"X-T":"v"},"env":{"K":"V"}}
+
+> {%
+    client.test("copy-config 产出文本但不写不重载", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.written === false && response.body.reloaded === false, "不得写宿主配置或重载");
+        client.assert(typeof response.body.text === "string" && response.body.text.indexOf('"connector": "github"') !== -1, "应产出可复制文本片段");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤12：remove 删除本 provider 记录并落盘（溯源 spec:connector-market#连接器详情按 provider 定位）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"remove","id":"github"}
+
+> {%
+    client.test("remove 删除记录", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.removed === true && response.body.id === "github", "应删除 github 记录");
+    });
+%}
+
+### 链路 BAZAAR-CONNECTOR-OAUTH-001 / 步骤13：后置校验——读盘确认 remove 落盘且未误删其它连接器
+GET {{BASE_URL}}/__test/store-file?providerId=workbuddy
+
+> {%
+    client.test("remove 落盘且其它连接器不受影响", function() {
+        client.assert(response.status === 200, "期望 200，实际 " + response.status);
+        client.assert(response.body.snapshot.configs.github === undefined, "github 记录应从磁盘删除");
+    });
+%}
+
+### 基础面：路径段与请求体 providerId 不一致被拦，两个 provider 都不写（溯源 spec:connector-market#写路由 providerId 一致性）
+POST {{BASE_URL}}/dsh-bazaar/providers/demo/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"authorize","id":"github"}
+
+> {%
+    client.test("providerId 不一致返回 BAZAAR_PROVIDER_ID_MISMATCH", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.code === "BAZAAR_PROVIDER_ID_MISMATCH", "错误码应为 BAZAAR_PROVIDER_ID_MISMATCH，实际 " + response.body.code);
+    });
+%}
+
+### 基础面：未声明 connectorMarket 的 provider 被拦（溯源 spec:connector-market#未声明能力被拦）
+POST {{BASE_URL}}/dsh-bazaar/providers/demo/connectors/action
+Content-Type: application/json
+
+{"providerId":"demo","action":"list"}
+
+> {%
+    client.test("demo 未声明 connectorMarket 返回 BAZAAR_CAPABILITY_UNDECLARED", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.code === "BAZAAR_CAPABILITY_UNDECLARED", "错误码应为 BAZAAR_CAPABILITY_UNDECLARED，实际 " + response.body.code);
+    });
+%}
+
+### 基础面：不支持的旧别名动作被拒（溯源 spec:connector-market#动作集收敛）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/action
+Content-Type: application/json
+
+{"providerId":"workbuddy","action":"repair","id":"github"}
+
+> {%
+    client.test("repair 别名返回 BAZAAR_CONNECTOR_ACTION_UNSUPPORTED", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.code === "BAZAAR_CONNECTOR_ACTION_UNSUPPORTED", "错误码应为 BAZAAR_CONNECTOR_ACTION_UNSUPPORTED，实际 " + response.body.code);
+    });
+%}
+
+### 基础面：不存在的连接器 id（溯源 spec:connector-market#连接器详情按 provider 定位）
+POST {{BASE_URL}}/dsh-bazaar/providers/workbuddy/connectors/session
+Content-Type: application/json
+
+{"providerId":"workbuddy","id":"does-not-exist"}
+
+> {%
+    client.test("不存在 id 返回 BAZAAR_CONNECTOR_NOT_FOUND", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.code === "BAZAAR_CONNECTOR_NOT_FOUND", "错误码应为 BAZAAR_CONNECTOR_NOT_FOUND，实际 " + response.body.code);
+    });
+%}

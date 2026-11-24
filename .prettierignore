@@ -1,0 +1,75 @@
+# Prettier 的强制面 = 未被这里排除的文件。纪律：源仓搬来的「存量」逐个点名排除，
+# 本组新建的文件一律留在强制面内（组 5 的静态扫描用例会断言"新增文件都在强制面内"）。
+node_modules/
+openspec/
+.agents/
+.worktree/
+dist/
+release/
+coverage/
+package-lock.json
+eslint-suppressions.json
+
+# --- 存量：lib/ 20 个模块（改名是逐条替换，整文件格式化会把 diff 变成噪声）---
+/lib/auth.js
+/lib/bundle.js
+/lib/client.js
+/lib/connector-flow.js
+/lib/connector.js
+/lib/connectors.js
+/lib/index.js
+/lib/market.js
+/lib/mcp-patch.js
+/lib/mnemon.js
+/lib/portal.js
+/lib/session-plugin.js
+/lib/session.js
+/lib/skill-install.js
+/lib/skill-providers.js
+/lib/util.js
+/lib/wb-accounts.js
+/lib/wb-login.js
+/lib/wb-vault.js
+/lib/webui.js
+
+# --- 存量：test/ 22 个用例文件与 3 个 e2e 辅助模块 ---
+/test/connector-controller.test.mjs
+/test/connector-flow.test.mjs
+/test/connector-gate.test.mjs
+/test/connector-layered.test.mjs
+/test/connector-real-shapes.test.mjs
+/test/connector-shared-state.test.mjs
+/test/connector-tool-enumeration.test.mjs
+/test/connectors.test.mjs
+/test/core.test.mjs
+/test/e2e-helpers.test.mjs
+/test/fake-model-e2e.mjs
+/test/fake-model-expert-e2e.mjs
+/test/hook-order.test.mjs
+/test/host-integration.mjs
+/test/mcp-patch.test.mjs
+/test/mnemon.test.mjs
+/test/portal-market.test.mjs
+/test/release-script.test.mjs
+/test/route-lifecycle.test.mjs
+/test/settings-card.test.mjs
+/test/skill-install.test.mjs
+/test/wb-accounts.test.mjs
+/test/wb-login.test.mjs
+/test/wb-vault.test.mjs
+/test/webui.test.mjs
+
+# --- 存量：scripts/ 四个搬来的脚本（quality-gate.mjs 是新写的，受强制）---
+/scripts/e2e.mjs
+/scripts/normalize-eol.mjs
+/scripts/release.mjs
+/scripts/spawn-util.mjs
+
+# --- 0.x 遗留文档与截图（1.7 删除、组 5 重写后再纳入）---
+/docs/
+/CHANGELOG.md
+/README.md
+/DESIGN.md
+/cordis.patch.yml
+/.gitignore
+/.prettierignore

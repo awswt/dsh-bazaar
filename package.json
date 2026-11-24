@@ -1,0 +1,88 @@
+{
+  "name": "dsh-bazaar",
+  "version": "1.0.0",
+  "description": "Multi-provider marketplace plugin for DeepSeek Harness: provider registry, expert/skill/connector/account markets, session assistant panel.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./provider": "./lib/provider/index.js",
+    "./providers/workbuddy": "./lib/providers/workbuddy/index.js",
+    "./client": "./lib/client.js",
+    "./auth": "./lib/auth.js",
+    "./connectors": "./lib/connectors.js",
+    "./skill-install": "./lib/skill-install.js",
+    "./session-plugin": "./lib/session-plugin.js",
+    "./bundle": "./lib/bundle.js",
+    "./mnemon": "./lib/mnemon.js",
+    "./mcp-patch": "./lib/mcp-patch.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.0-rc.1 <0.4.0-0"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "tar": "^7.5.22",
+    "yaml": "^2.9.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/quality-gate.mjs",
+    "lint": "eslint lib scripts test --suppressions-location ./eslint-suppressions.json",
+    "lint:live": "eslint lib scripts test",
+    "lint:baseline": "eslint lib scripts test --suppress-all --prune-suppressions --suppressions-location ./eslint-suppressions.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "eol": "node scripts/normalize-eol.mjs",
+    "eol:write": "node scripts/normalize-eol.mjs --write",
+    "e2e": "node scripts/e2e.mjs",
+    "release": "node scripts/release.mjs"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "expert",
+    "skills",
+    "marketplace",
+    "provider",
+    "workbuddy"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/awswt/dsh-bazaar.git"
+  },
+  "homepage": "https://github.com/awswt/dsh-bazaar",
+  "files": [
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/e2e-baseline.md",
+    "docs/releases"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1"
+  }
+}

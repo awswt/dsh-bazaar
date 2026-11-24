@@ -1,0 +1,12 @@
+# dsh-bazaar bundle patch.
+# `dsh plugin --profile <name> add <package>` appends this bundle to
+# dsh.profile.bundles and applies this layer, so the host half mounts without
+# editing the profile patch by hand.
+- insert:
+    - id: bazaar
+      name: dsh-bazaar
+      config:
+        enabled: true
+        marketMode: auto
+        authMode: auto
+        portalBaseUrl: https://www.workbuddy.cn
