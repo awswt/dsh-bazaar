@@ -14,7 +14,7 @@ import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
-import { bumpVersion, parseArgs, renderNotes, run } from '../scripts/release.mjs'
+import { bumpVersion, parseArgs, renderNotes, run, githubToken } from '../scripts/release.mjs'
 import { tapPassCount } from '../scripts/spawn-util.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -76,16 +76,20 @@ test('bumpVersion walks patch, minor and major without inventing a prerelease', 
 
 test('parseArgs defaults to a patch release that pushes', () => {
   // artifacts 默认 true：用户明确要求"推 git 时要构建 release 版本，而不是只打 tag"。
-  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null, what: [] })
+  assert.deepEqual(parseArgs([]), { bump: 'patch', dryRun: false, push: true, artifacts: true, github: true, message: null, what: [] })
   assert.deepEqual(parseArgs(['--minor', '--dry-run', '--no-push', '-m', 'feat: x']), {
     bump: 'minor',
     dryRun: true,
     push: false,
     artifacts: true,
+    github: true,
     message: 'feat: x',
     what: [],
   })
   assert.equal(parseArgs(['--no-artifacts']).artifacts, false)
+  // 用户要求每次提交都发 GitHub Release；--no-github 是显式逃生口，默认必须开。
+  assert.equal(parseArgs(['--no-github']).github, false)
+  assert.equal(parseArgs([]).github, true)
   assert.throws(() => parseArgs(['--nope']), /unknown argument: --nope/)
 })
 
@@ -148,6 +152,24 @@ test('renderNotes degrades cleanly when there is no artifact and no previous tag
   assert.doesNotMatch(notes, /## 安装包/)
   assert.doesNotMatch(notes, /上一个版本/)
   assert.match(notes, /## 最近提交|^$/m)
+})
+
+test('githubToken reads the token from the environment and prefers GITHUB_TOKEN', () => {
+  // token 绝不写进源码/文档/日志：唯一可预期的注入点是环境变量。
+  const savedGithub = process.env.GITHUB_TOKEN
+  const savedGh = process.env.GH_TOKEN
+  try {
+    process.env.GH_TOKEN = 'gh-from-gh-token'
+    process.env.GITHUB_TOKEN = 'gh-from-github-token'
+    assert.equal(githubToken(), 'gh-from-github-token')
+    delete process.env.GITHUB_TOKEN
+    assert.equal(githubToken(), 'gh-from-gh-token')
+  } finally {
+    if (savedGithub === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = savedGithub
+    if (savedGh === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = savedGh
+  }
 })
 
 test('tapPassCount reads node:test output and refuses to guess', () => {

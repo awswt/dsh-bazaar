@@ -8,9 +8,10 @@
  *   node scripts/release.mjs --dry-run        # 只打印将要发生什么
  *   node scripts/release.mjs --no-push        # 本地提交 + 打 tag，不推
  *   node scripts/release.mjs --no-artifacts   # 跳过 npm pack（离线/调试）
+ *   node scripts/release.mjs --no-github      # 本地提交/tag/push，但不发 GitHub Release
  *   node scripts/release.mjs -m "feat: xxx" -w "新增：设置页登录入口" -w "修复：xxx"
  *
- * 流程：测试 → bump → **构建 release 产物** → commit → tag → push → 打印 release 信息。
+ * 流程：测试 → bump → **构建 release 产物** → commit → tag → push → **发 GitHub Release 并上传 tgz**。
  *
  * 为什么先跑测试再 bump：版本号是"这份代码可信"的唯一信号，测试挂了就不该有新版本号，
  * 否则别人装到的是带 bug 的版本，只会让人怀疑"是不是又没装新代码"。
@@ -38,12 +39,13 @@ const notesDir = path.join(root, 'docs', 'releases')
 const run = createRunner(root)
 
 function parseArgs(argv) {
-  const options = { bump: 'patch', dryRun: false, push: true, artifacts: true, message: null, what: [] }
+  const options = { bump: 'patch', dryRun: false, push: true, artifacts: true, github: true, message: null, what: [] }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--dry-run') options.dryRun = true
     else if (arg === '--no-push') options.push = false
     else if (arg === '--no-artifacts') options.artifacts = false
+    else if (arg === '--no-github') options.github = false
     else if (arg === '--minor') options.bump = 'minor'
     else if (arg === '--major') options.bump = 'major'
     else if (arg === '--patch') options.bump = 'patch'
@@ -175,10 +177,81 @@ function renderNotes({ version, previous, artifact, testCount, testFilesCount, c
   return `${lines.join('\n')}\n`
 }
 
+/**
+ * GitHub token 只从环境变量或 git credential 动态读取——绝不写进源码、文档、日志或 commit。
+ * 用 git credential fill 注入 stdin，避免 token 出现在命令行（`ps` 可见）。
+ */
+function githubToken() {
+  for (const name of ['GITHUB_TOKEN', 'GH_TOKEN']) {
+    const value = process.env[name]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  const input = 'protocol=https\nhost=github.com\n\n'
+  const result = spawnSync('git', ['credential', 'fill'], {
+    cwd: root, encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  if (result.status !== 0) return null
+  const line = String(result.stdout ?? '')
+    .split('\n')
+    .map(item => item.trim())
+    .find(item => item.startsWith('password='))
+  if (line === undefined) return null
+  const token = line.slice('password='.length).trim()
+  return token !== '' ? token : null
+}
+
+/** 出网一律 https + 固定 host，URL 由代码拼，不接受外部输入，避免出网闸门被绕过。 */
+const GITHUB_API = 'https://api.github.com'
+const GITHUB_REPO = 'awswt/dsh-bazaar'
+
+async function githubRequest(url, { method = 'GET', token, headers = {}, body } = {}) {
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'dsh-bazaar-release',
+      ...(token !== null ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
+    },
+    ...(body === undefined ? {} : { body }),
+  })
+  const text = await response.text()
+  if (!response.ok) throw new Error(`GitHub ${method} ${url} failed (${response.status}): ${text.slice(0, 600)}`)
+  return text === '' ? null : JSON.parse(text)
+}
+
+/** 创建 GitHub Release 并上传 tgz；返回 html_url 供日志核对。 */
+async function publishGithubRelease({ tag, notes, artifact, token }) {
+  const release = await githubRequest(`${GITHUB_API}/repos/${GITHUB_REPO}/releases`, {
+    method: 'POST',
+    token,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tag_name: tag,
+      name: tag,
+      body: notes,
+      draft: false,
+      prerelease: false,
+    }),
+  })
+  if (artifact !== null) {
+    const bytes = await readFile(artifact.file)
+    const uploadUrl = String(release?.upload_url ?? '').replace(/\\{\\?.*$/, '')
+    await githubRequest(`${uploadUrl}?name=${encodeURIComponent(artifact.name)}`, {
+      method: 'POST',
+      token,
+      headers: { 'Content-Type': 'application/gzip' },
+      body: bytes,
+    })
+  }
+  return release?.html_url ?? `${GITHUB_API}/repos/${GITHUB_REPO}/releases/tags/${tag}`
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (options.help === true) {
-    console.log('usage: node scripts/release.mjs [--patch|--minor|--major] [--dry-run] [--no-push] [--no-artifacts] [-m message] [-w "one change line" ...]')
+    console.log('usage: node scripts/release.mjs [--patch|--minor|--major] [--dry-run] [--no-push] [--no-artifacts] [--no-github] [-m message] [-w "one change line" ...]')
     return
   }
 
@@ -196,13 +269,13 @@ async function main() {
     return
   }
 
-  console.log('\n[1/6] tests')
+  console.log('\n[1/7] tests')
   const tap = run(process.execPath, ['--test', ...files], { capture: true })
   forward(tap)
   const testCount = tapPassCount(tap)
   if (testCount === null) throw new Error('could not read the test count out of the TAP output — refusing to release blind')
 
-  console.log('\n[2/6] bump version')
+  console.log('\n[2/7] bump version')
   // 只替换 version 这一行，保留原有缩进与字段顺序，diff 里不该出现大面积噪声。
   const nextRaw = raw.replace(/("version"\s*:\s*")[^"]+(")/, `$1${nextVersion}$2`)
   if (nextRaw === raw) throw new Error('could not locate "version" in package.json')
@@ -215,12 +288,12 @@ async function main() {
 
   let artifact = null
   if (options.artifacts === true) {
-    console.log('\n[3/6] build release artifacts')
+    console.log('\n[3/7] build release artifacts')
     artifact = await packTarball(nextVersion, path.join(releaseRoot, tag))
     console.log(`  ${artifact.name}  ${artifact.bytes} bytes`)
     console.log(`  sha256 ${artifact.sha256}`)
   } else {
-    console.log('\n[3/6] build release artifacts — skipped (--no-artifacts)')
+    console.log('\n[3/7] build release artifacts — skipped (--no-artifacts)')
   }
 
   const notes = renderNotes({
@@ -232,7 +305,7 @@ async function main() {
   await writeFile(notesPath, notes, 'utf8')
   console.log(`  notes  docs/releases/${tag}.md`)
 
-  console.log('\n[4/6] commit')
+  console.log('\n[4/7] commit')
   run('git', ['add', '-A'])
   const staged = run('git', ['diff', '--cached', '--name-only'], { capture: true }).trim()
   if (staged === '') {
@@ -242,20 +315,38 @@ async function main() {
   }
   run('git', ['commit', '-m', message])
 
-  console.log('\n[5/6] tag')
+  console.log('\n[5/7] tag')
   // -a 而不是轻量 tag：注释里放 release 说明，`git show vX.Y.Z` 就能看到这次发了什么。
   run('git', ['tag', '-a', tag, '-F', path.join('docs', 'releases', `${tag}.md`)])
   console.log(`  ${tag}`)
 
   if (options.push !== true) {
-    console.log('\n[6/6] push — skipped (--no-push)')
+    console.log('\n[6/7] push — skipped (--no-push)')
+    forward('\n[7/7] GitHub Release — skipped (tag not pushed)\n')
     console.log(`\nreleased ${tag} locally (not pushed)`)
     return
   }
-  console.log('\n[6/6] push')
+  console.log('\n[6/7] push')
   run('git', ['push', 'origin', 'HEAD'])
   // tag 单独推：HEAD 成功而 tag 冲突时，至少要让人看到是 tag 这一步失败，而不是整体静默。
   run('git', ['push', 'origin', tag])
+
+  let releaseUrl = null
+  if (options.github === true) {
+    forward('\n[7/7] GitHub Release\n')
+    const token = githubToken()
+    if (token === null) throw new Error('no GitHub token: set GITHUB_TOKEN/GH_TOKEN or configure git credential')
+    releaseUrl = await publishGithubRelease({ tag, notes, artifact, token })
+    forward(`  ${releaseUrl}\n`)
+    // 发完立刻核对 latest：脚本自己先确认，不能等用户去网页上发现发错版本。
+    const latest = await githubRequest(`${GITHUB_API}/repos/${GITHUB_REPO}/releases/latest`, { token })
+    if (latest?.tag_name !== tag) {
+      throw new Error(`GitHub latest is ${latest?.tag_name ?? '(none)'}, expected ${tag}`)
+    }
+    forward(`  verified latest = ${latest.tag_name}\n`)
+  } else {
+    forward('\n[7/7] GitHub Release — skipped (--no-github)\n')
+  }
 
   console.log(`\nreleased ${tag}`)
   console.log('\n--- release info ---')
@@ -270,6 +361,7 @@ async function main() {
   console.log(`notes     docs/releases/${tag}.md`)
   console.log(`tag       ${tag} (annotated)`)
   console.log(`commit    ${message}`)
+  if (releaseUrl !== null) forward(`release   ${releaseUrl}\n`)
   console.log('install   dsh plugin --profile <profile> add <path-to-tarball>')
 }
 
@@ -284,4 +376,4 @@ if (invokedDirectly) {
   })
 }
 
-export { bumpVersion, parseArgs, renderNotes, run, forward }
+export { bumpVersion, parseArgs, renderNotes, run, forward, githubToken, publishGithubRelease }
