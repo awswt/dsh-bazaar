@@ -126,8 +126,14 @@ const server = http.createServer((req, res) => {
 })
 await new Promise(resolve => server.listen(9877, '127.0.0.1', resolve))
 
-const exe = process.env.DSH_APP_EXE ?? 'D:/Program Files/deepseek harness/DeepSeek Harness.exe'
-const bin = process.env.DSH_BIN ?? 'D:/Program Files/deepseek harness/resources/app.asar/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js'
+const exe = process.env.DSH_APP_EXE
+const bin = process.env.DSH_BIN
+if (!exe || !bin) {
+  console.error(
+    'set DSH_APP_EXE (the harness executable) and DSH_BIN (its @deepseek-ai/dsh/lib/bin.js) before running this driver'
+  )
+  process.exit(2)
+}
 const child = spawn(exe, [bin, '--profile', process.env.DSH_TEST_PROFILE ?? 'bazaar-gh', process.env.DSH_TEST_PROMPT ?? 'Call the bazaar_helper tool with action=connector.'], {
   env: {
     ...process.env,
