@@ -18,4 +18,5 @@ app-64.7z
 # 说明（docs/releases/*.md）要进版本库，产物本身不进。
 release/
 .worktree/
-openspec/states/
+openspec/
+.agents/
