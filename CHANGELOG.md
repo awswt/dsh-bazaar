@@ -47,6 +47,10 @@
 - 运行依赖（`fflate` / `tar` / `yaml`）、`engines`（`^22.19.0 || >=24.0.0`）、`scripts/release.mjs` 机制与 `docs/releases/vX.Y.Z.md` 约定、`publishConfig` 字段。
 - 界面插槽与排序：`conversation.input.left`、`settings.section` / `settings.section.icon`，`order` 25 / 26 不变。
 
+### 修复
+
+- **安装后宿主启动失败（1.0.0 内测事故）**：`@deepseek-ai/dsh-tools` 曾写在 `dependencies` 里，安装时被包管理器提升进 profile 成为一份独立副本；宿主升级后启动预检按运行时版本判定该副本的 `peerDependencies` 不兼容，把它置成 `disabled`，`tools` 服务失去提供者，`tool-executor-native` 与 `agent-loop` 两个 required 插件未激活，宿主以 fatal 退出。修法两半：工具定义改由 `lib/tool-def.js` 本地实现（与宿主 `defineTool` 同形，`ToolsService.register()` 的行为不变），且 `package.json` 的 `dependencies` 不再声明任何 `@deepseek-ai/*`。两半缺一即复发，`test/tool-def.test.mjs` 对「`dependencies` 里零宿主包」与「`lib/` 下零宿主 import」各有断言并带反向控制。
+
 ### 不做的事
 
 - **不迁移旧数据**：不探测、不提示、不读取旧数据目录（`<DSH_HOME>/workbuddy-helper`、`<DSH_HOME>/workbuddy-vault`）下的任何残留，升级后需重新登录并重新选择专家库。

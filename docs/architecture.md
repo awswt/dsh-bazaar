@@ -34,6 +34,12 @@ spec 定义「必须做到什么」。
 - provider 实现不认识 `index.js`、不认识 webui，只依赖 `provider/` 下的契约类型与工具。
 - 顶层业务模块（`connectors.js`、`auth.js`、`wb-accounts.js`、`wb-vault.js`、`wb-login.js`）
   是可离线单测的纯逻辑，不含 DSH import；宿主能力只从 `index.js` 注入进来。
+- 工具定义工厂（`tool-def.js`）同理是本地实现：宿主 `@deepseek-ai/dsh-tools` 的 `defineTool` 在
+  0.2.x 各版本里是纯工厂（展开参数 spec、校验 `output.render`、包一层参数校验），不依赖模块身份。
+  自己实现这三十行，换来的是「插件不把宿主内部包写进 `dependencies`」——写成运行依赖会被包管理器
+  提升进 profile 成为独立副本，宿主升级后启动预检判它 `peerDependencies` 不兼容、置 `disabled`，
+  `tools` 服务失去提供者，整个宿主 fatal。**全仓对 `@deepseek-ai/*` 的运行期 import 数为零**，
+  由 `test/tool-def.test.mjs` 双向守着（`.js` 扫描 + `package.json` 依赖表，均带反向控制）。
 - 新增一家 provider = 实现五域契约 + `bazaar.providers.register()`，不改入口。
 
 ## 2. 两处全局挂载点

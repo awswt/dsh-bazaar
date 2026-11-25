@@ -24,6 +24,7 @@ dsh plugin --profile <profile> add file:/path/to/dsh-bazaar
 - peer：`@deepseek-ai/dsh >=0.2.0-rc.1 <0.4.0-0`
 - engines：`^22.19.0 || >=24.0.0`
 - 运行依赖：`fflate` / `tar` / `yaml`
+- 宿主内部包不进运行依赖：工具定义由 `lib/tool-def.js` 本地实现（`defineTool` 的等价物），`dependencies` 里没有任何 `@deepseek-ai/*`。把宿主内部包写成运行依赖时，包管理器会在 profile 里装一份副本；宿主升级后启动预检按运行时版本判定这份副本不兼容，把它置为 `disabled`，`tools` 服务随之失去提供者，所有依赖工具的插件一起挂起、宿主根本起不来。1.0.0 修过这起事故，`test/tool-def.test.mjs` 守着这两条不变量。
 - **不发布 npm**：`publishConfig` 字段保留，物料只推 GitHub。
 
 ## 两个界面
