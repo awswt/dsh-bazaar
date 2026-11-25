@@ -26,3 +26,6 @@ DESIGN.md
 
 # 寮�鍙戣鑼冿紙鏈湴淇濈暀锛屼笉杩涗粨搴擄級
 AGENTS.md
+
+# 提交信息临时文件（Windows 下多行中文走 -F 文件）
+.git-commit-msg.txt
