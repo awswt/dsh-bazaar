@@ -161,8 +161,25 @@ test('新建与重写的文件都在 prettier 强制面内（含反向控制）'
   )
 })
 
+/**
+ * .gitignore 里逐行点名的「本机才有的产物」（如 package-lock.json）允许被
+ * .prettierignore 登记却不要求存在于磁盘——干净克隆没有它，不等于死条目。
+ * 只认精确文件名与目录行，与 readIgnoreList 同一纪律：不接受通配。
+ */
+function readGitignoredNames() {
+  const text = readFileSync(path.join(root, '.gitignore'), 'utf8')
+  const out = new Set()
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#') || line.includes('*')) continue
+    out.add(line.replace(/^\//, ''))
+  }
+  return out
+}
+
 test('免检名单与磁盘双向对账：没有漏登记，也没有已重写的死条目', () => {
   const list = readIgnoreList()
+  const gitignored = readGitignoredNames()
   const walked = [
     ...collectSources('lib'),
     ...collectSources('scripts'),
@@ -173,7 +190,9 @@ test('免检名单与磁盘双向对账：没有漏登记，也没有已重写�
   ]
 
   // 死条目：清单里点名了，磁盘上却找不到——通常是文件改名/删除后忘了划掉。
-  const dead = list.files.filter((rel) => !existsSync(path.join(root, rel)))
+  // 例外：.gitignore 逐行点名的本机产物（package-lock.json 等）在干净克隆里本就不存在，
+  // 登记它是为了让「本地有它时」也别被 prettier 改写，不算死条目。
+  const dead = list.files.filter((rel) => !existsSync(path.join(root, rel)) && !gitignored.has(rel))
   assert.deepEqual(dead, [], `免检名单里有已不存在的文件，请划掉：\n${dead.join('\n')}`)
 
   // 漏登记的反面：被免检的文件必须就是清单点名的文件（目录前缀下的存量按目录整体免检）。

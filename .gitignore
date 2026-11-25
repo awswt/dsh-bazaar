@@ -20,3 +20,6 @@ release/
 .worktree/
 openspec/
 .agents/
+
+# 设计令牌文档（开发件，本地保留）
+DESIGN.md
