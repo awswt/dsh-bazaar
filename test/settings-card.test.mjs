@@ -264,3 +264,36 @@ test('样式表只用自己的 bz- 前缀，反向控制能抓出别家前缀', 
     assert.ok(css.includes(rule), `${rule} must be in the shared stylesheet`)
   }
 })
+
+test('样式表不写死颜色，只消费宿主 alias 令牌（深色模式靠 body[data-ds-dark-theme] 翻转）', async () => {
+  const { moduleExports } = await loadClient()
+  const css = moduleExports.__internals.CSS
+
+  // 裸 hex 只能是 var() 的 fallback（宿主令牌缺失时才用），不能直接当颜色值。
+  // 反向控制：裸 hex 写在声明值里必须被抓出来。
+  function hardCodedColors(text) {
+    const bad = []
+    for (const match of text.matchAll(/[-\w]+\s*:\s*([^;{}]+)/g)) {
+      const value = match[1]
+      if (/#[0-9a-fA-F]{3,8}/.test(value) && /var\(/.test(value) !== true) bad.push(match[0])
+      if (/rgba?\(/.test(value) && /var\(/.test(value) !== true) bad.push(match[0])
+    }
+    return bad
+  }
+
+  assert.deepEqual(hardCodedColors('.x{background:#fef2f2}'), ['background:#fef2f2'])
+  assert.deepEqual(hardCodedColors(css), [], '写死颜色会在深色模式下变成一片白斑')
+
+  // static 令牌是恒定色，宿主只翻转 alias；拿它当表面色就是 1.0.0 那次白斑事故。
+  assert.ok(
+    /--dsw-static-/.test(css) !== true,
+    '--dsw-static-* 不随主题翻转，只能出现在宿主自己的样式表里',
+  )
+  // 不写自己的深色覆盖，也不写媒体查询：消费 alias 就够了。
+  assert.ok(/prefers-color-scheme/.test(css) !== true, '主题跟随靠 alias，不写媒体查询')
+  assert.ok(/data-ds-dark-theme/.test(css) !== true, '主题跟随靠 alias，不写深色覆盖')
+
+  for (const token of ['--bz-bg-alt:var(--dsw-alias-', '--bz-ok-bg:', '--bz-danger-bg:']) {
+    assert.ok(css.includes(token), `${token} must derive from host aliases`)
+  }
+})

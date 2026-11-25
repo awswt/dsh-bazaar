@@ -49,6 +49,8 @@
 
 ### 修复
 
+- **深色模式下界面几乎不可读（1.0.0 内测事故）**：样式表把 `--bz-bg-alt` 接到 `--dsw-static-neutral-bluish-50`，那是**恒定色**——宿主只靠 `body[data-ds-dark-theme]` 重定义 `--dsw-alias-*` 来翻转主题，`--dsw-static-*` 不参与翻转，于是浅色底被原样搬进深色界面，徽标、页签、搜索框、骨架屏全成白斑；另有 20 处硬编码 hex（`#e6faed`/`#fef2f2`/`#570c0c`/`#f2c7c7`/`#eef2ff`/`#1e2a5a`/`#eceef1`/`#f6f7f8`/`#8fd6a8`/`#233c2c`/`#fef5e7`/`#27241f` 等）全是照浅色方案挑的值。修法：全部改为消费宿主 `--dsw-alias-*`，派生底色/边线用 `color-mix()` 从语义色与 `--bz-bg` 现算，**不写任何深色覆盖、不写 `prefers-color-scheme`**——别名一翻转整套颜色跟着翻。`test/settings-card.test.mjs` 断言裸 hex 只能出现在 `var()` 的 fallback 里，并禁止 `--dsw-static-*`、`prefers-color-scheme`、`data-ds-dark-theme` 出现在自有样式表中，带反向控制。
+
 - **安装后宿主启动失败（1.0.0 内测事故）**：`@deepseek-ai/dsh-tools` 曾写在 `dependencies` 里，安装时被包管理器提升进 profile 成为一份独立副本；宿主升级后启动预检按运行时版本判定该副本的 `peerDependencies` 不兼容，把它置成 `disabled`，`tools` 服务失去提供者，`tool-executor-native` 与 `agent-loop` 两个 required 插件未激活，宿主以 fatal 退出。修法两半：工具定义改由 `lib/tool-def.js` 本地实现（与宿主 `defineTool` 同形，`ToolsService.register()` 的行为不变），且 `package.json` 的 `dependencies` 不再声明任何 `@deepseek-ai/*`。两半缺一即复发，`test/tool-def.test.mjs` 对「`dependencies` 里零宿主包」与「`lib/` 下零宿主 import」各有断言并带反向控制。
 
 - **面板两处「读取失败」：插件根本没加载完（1.0.0 内测事故）**：`apply()` 里用裸赋值挂 `ctx.bazaar`，而宿主 cordis 的 `ctx` 是 Proxy，set trap 对未声明的属性直接抛 `cannot set property "bazaar" without provide`。`apply()` 是同步执行的，这一抛等于插件未加载——`lib/index.js:239` 已调用的 `ctx.inject(['webServer'])` 回调永不触发，13 条 `/dsh-bazaar/*` 路由一条也没注册，`ctx.tools.register()` 也没跑到，前端设置页报「专家库注册表读取失败」、会话面板报「会话状态读取失败」（两者都是 `/dsh-bazaar/providers`、`/dsh-bazaar/state` 拿到 404）。修法：`ctx.provide('bazaar', service)`，裸对象 ctx（测试夹具、第三方宿主）没有 `provide` 时退回普通赋值。`test/provider-entry.test.mjs` 的 `cordisLikeCtx()` 复现宿主 set trap 语义，先反证裸赋值会抛、再正向断言 provide 挂上了且路由注册成功。
