@@ -366,6 +366,9 @@ export async function createApiServer(options = {}) {
     /**
      * 关服务、放路由、清临时 profile。自证服务用后即停：只删自己 mkdtemp 出来的目录，
      * 调用方显式传进来的 dataDir 属于调用方，不替他删。
+     *
+     * `server.close()` 本身会被 undici（`fetch`）的 keep-alive 连接挂住，关不掉就轮不到
+     * 删目录——先断空闲连接、再强制断全部，否则每跑一次用例就在 %TEMP% 留一个 profile。
      */
     async close() {
       while (disposers.length > 0) {
@@ -377,8 +380,13 @@ export async function createApiServer(options = {}) {
         }
       }
       if (typeof releaseProviderRoutes === 'function') releaseProviderRoutes()
-      await new Promise((resolve) => server.close(resolve))
-      if (ownsDataDir === true) rmSync(dataDir, { recursive: true, force: true })
+      const closed = new Promise((resolve) => server.close(resolve))
+      if (typeof server.closeIdleConnections === 'function') server.closeIdleConnections()
+      if (typeof server.closeAllConnections === 'function') server.closeAllConnections()
+      await closed
+      if (ownsDataDir === true) {
+        rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      }
     },
   }
 }

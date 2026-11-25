@@ -13,6 +13,7 @@
  * 本用例只负责「喂真实 HTTP、统计结论、并证明失败会被计数」。
  */
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -105,6 +106,17 @@ describe('api-tests 链路脚本在仓内 harness 上可复现', () => {
       base + '/dsh-bazaar/providers/bce4b8-ghost/status?sessionId=bce4b8-api',
     )
     assert.ok(ghost.status >= 400, '未知 provider 必须被拒，实际 ' + ghost.status)
+  })
+
+  it('harness 关停后自建的临时 profile 必须消失（用后即停）', async () => {
+    const throwaway = await createApiServer({ port: 0 })
+    await throwaway.listen(0)
+    const dir = throwaway.dataDir
+    assert.equal(existsSync(dir), true, 'harness 应自建临时 profile')
+    await throwaway.close()
+    // 反向自证：这条断言红了说明每次跑用例都在 %TEMP% 留一份 profile（keep-alive 连接
+    // 会让 server.close() 挂住，删目录那一步就轮不到）。
+    assert.equal(existsSync(dir), false, '临时 profile 必须被删掉，实际还在 ' + dir)
   })
 
   it('反向控制 1：脚本里塞一条必然失败的断言，结论必须变红', async () => {
