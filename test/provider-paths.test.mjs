@@ -6,7 +6,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync } from 'node:fs'
+import { readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
@@ -20,6 +20,7 @@ import {
   providersRoot,
   safeJoin,
 } from '../lib/provider/paths.js'
+import { tempDirSync } from './temp.mjs'
 
 const fn = async function () {
   return {}
@@ -117,7 +118,7 @@ test('两道防线同源：白名单只有一份 pattern，注册与拼装判定
 })
 
 test('路径模块绝不碰磁盘：非法 id 不会在 providers 下留下目录', () => {
-  const base = mkdtempSync(path.join(tmpdir(), 'bazaar-paths-'))
+  const base = tempDirSync('bazaar-paths-')
   const before = readdirSync(base)
   assert.deepEqual(before, [])
   providerDir(base, '../evil')

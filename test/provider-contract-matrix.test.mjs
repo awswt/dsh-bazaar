@@ -16,8 +16,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 
@@ -32,6 +31,7 @@ import {
   PROVIDER_ID as BUILTIN_ID,
   createWorkbuddyProvider,
 } from '../lib/providers/workbuddy/index.js'
+import { tempDirSync } from './temp.mjs'
 
 const EXAMPLE_ID = 'minimal-example'
 
@@ -103,7 +103,7 @@ function wiring(seedBaseDir = undefined) {
       events.push(event)
     },
   })
-  const baseDir = seedBaseDir ?? mkdtempSync(path.join(tmpdir(), 'bazaar-matrix-'))
+  const baseDir = seedBaseDir ?? tempDirSync('bazaar-matrix-')
   const activeProviders = createActiveProviderSet(registry, {
     session: session,
     defaultProvider: '',

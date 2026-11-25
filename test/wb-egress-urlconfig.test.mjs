@@ -16,6 +16,7 @@ import { createAccountStore } from '../lib/wb-vault.js'
 import { createAccountService } from '../lib/wb-accounts.js'
 import { collectAccount, pollLogin, refreshCredential, startLogin } from '../lib/wb-login.js'
 import { WorkBuddyConnector } from '../lib/connector.js'
+import { tempDir } from './temp.mjs'
 
 const ALLOW = ['www.codebuddy.cn', 'www.codebuddy.ai']
 
@@ -245,8 +246,5 @@ test('full chain stops at persist failure: poll does not present a stored accoun
 // ---------------------------------------------------------------------------
 
 async function makeTempDir() {
-  const { mkdtemp } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const path = await import('node:path')
-  return mkdtemp(path.join(tmpdir(), 'bazaar-egress-'))
+  return tempDir('bazaar-egress-')
 }

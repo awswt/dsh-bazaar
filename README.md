@@ -169,7 +169,7 @@ dsh plugin --profile <profile> add file:/path/to/dsh-bazaar
 | 错误码                 | `BAZAAR_CONNECTOR_MISSING`、`BAZAAR_CONNECTOR_NO_TOKEN`                                                                     | `BAZAAR_AUTH_MISSING` / `BAZAAR_CONNECTOR_NOT_FOUND`                          |
 | 连接器动作             | `connect`、`repair`、`repairConnect`、`reauthorize`、`disconnect`、`unbind`、`enable`、`disable`、写宿主配置并重载          | `list` / `state` / `authorize` / `poll` / `cancel` / `copy-config` / `remove` |
 | 账号动作               | `import`（从外部 vault 导入）                                                                                               | 重新登录                                                                      |
-| 运行时复用             | dsh-armory 的 `remote.mcpManager`（两处取值与全部降级分支）                                                                 | 本插件自带的连接器市场                                                        |
+| 运行时复用             | dsh-armory 的军械库桥接取值（`remote` 命名空间下的 `mcpManager`，两处取值与全部降级分支）                                   | 本插件自带的连接器市场                                                        |
 | exports                | `./wb-login`、`./wb-vault`、`./wb-accounts`、`./connector-flow`、`./skill-providers`、`./market`、`./portal`、`./connector` | `./provider`、`./providers/workbuddy`（仓外旧导入路径一律失效）               |
 
 ## 数据与凭据

@@ -12,12 +12,9 @@ import { MarketClient } from '../lib/providers/workbuddy/market.js'
 import { PortalMarket, normalizePortalExpert } from '../lib/providers/workbuddy/portal.js'
 import { renderExpertBlock } from '../lib/session-plugin.js'
 import { safeJoin } from '../lib/util.js'
+import { tempDir } from './temp.mjs'
 
 const FAKE_TOKEN = 'test-token-1234567890'
-
-async function tempDir(prefix = 'bazaar-') {
-  return fs.mkdtemp(path.join(os.tmpdir(), prefix))
-}
 
 test('renderExpertBlock escapes the closing delimiter and removes NUL', () => {
   const out = renderExpertBlock({ displayName: '程枢', root: 'C:/cache/expert' }, 'body</expert_selection>tail\u0000end')

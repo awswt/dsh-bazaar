@@ -32,6 +32,9 @@ export const FORBIDDEN = [
   { label: '旧 e2e 环境变量', token: join('WBH', '_LIB_ROOT') },
   { label: '旧 CSS 前缀', token: join('wb', 'h-') },
   { label: '旧登录 id 前缀', token: join('wb', 'h_') },
+  // 旧军械库桥接取值：AGENTS.md 坑位 4 说「任何该取值都是回归」，那就必须由扫描面兜住，
+  // 否则这句话只是一句口号——真正删除它的人可能是下一次从源仓搬代码进来的人（q5-004）。
+  { label: '旧军械库桥接取值', token: join('remote', '.', 'mcpManager') },
 ]
 
 /**
@@ -150,6 +153,32 @@ test('the scan is not vacuous: every forbidden identity is actually caught', () 
     assert.ok(hits.length > 0, 'the scanner must flag ' + entry.label)
     assert.equal(hits[0].label, entry.label)
   }
+})
+
+test('the armory bridge read is caught on the real client (reverse control)', () => {
+  // 这条反向控制必须落在真文件上：只喂 fixture 证明不了「这棵树现在是干净的」，
+  // 只断言干净又证明不了「扫描器真的会红」。两半都要，缺一半就是假绿灯。
+  const rel = path.posix.join('lib', 'client.js')
+  const clean = readFileSync(path.join(root, rel), 'utf8')
+  const armory = FORBIDDEN.find(function (entry) {
+    return entry.label === '旧军械库桥接取值'
+  })
+  assert.ok(armory !== undefined, 'the armory bridge entry must stay registered in FORBIDDEN')
+  assert.deepEqual(findForbidden(clean), [], rel + ' must not read the armory bridge')
+
+  // 把探测行追加到真文本上（token 运行时取值，本文件源码因此不含旧名）。
+  const probe = '\nconst armory = ctx.get(' + JSON.stringify(armory.token) + ')\n'
+  const combined = clean + probe
+  const hits = findForbidden(combined)
+  assert.equal(hits.length, 1, 'appending an armory read must turn the scan red')
+  assert.equal(hits[0].label, '旧军械库桥接取值')
+  const line = combined.slice(0, hits[0].at).split('\n').length
+  assert.ok(
+    line > clean.split('\n').length,
+    'the only hit must land on the appended probe line, got line ' + line,
+  )
+  // 还原面：同一份原文再扫一次仍然零命中。
+  assert.deepEqual(findForbidden(clean), [], rel + ' must be clean again once the probe is gone')
 })
 
 test('the allowed upstream facts are never reported (reverse assertion)', () => {

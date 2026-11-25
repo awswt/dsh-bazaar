@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { pathToFileURL } from 'node:url'
+import { tempDir } from './temp.mjs'
 
 /**
  * 桥接测试：连接由 `dsh-mcp-connector` 的管理页建立时，本插件的状态视图
@@ -54,7 +54,7 @@ function toolsService(names) {
 }
 
 async function fixture(options = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-shared-'))
+  const root = await tempDir('bz-shared-')
   const dshHome = path.join(root, 'home')
   const storages = path.join(dshHome, 'storages')
   await fs.mkdir(storages, { recursive: true })

@@ -3,13 +3,13 @@
 // 这条链路一旦断掉，插件所有状态显示都正常，但模型照样能调到已停用的工具。
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { createConnectorController } from '../lib/connectors.js'
+import { tempDir } from './temp.mjs'
 
 async function build(options = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-gate-'))
+  const root = await tempDir('bz-gate-')
   const profileDir = path.join(root, 'profile')
   const dataDir = path.join(root, 'data')
   await fs.mkdir(profileDir, { recursive: true })

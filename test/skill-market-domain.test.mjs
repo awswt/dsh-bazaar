@@ -10,8 +10,6 @@
  */
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { strToU8, zipSync } from 'fflate'
@@ -23,6 +21,7 @@ import { CODES } from '../lib/provider/errors.js'
 import { createProviderRegistry } from '../lib/provider/registry.js'
 import { createWorkbuddyProvider } from '../lib/providers/workbuddy/index.js'
 import { SessionManager } from '../lib/session.js'
+import { tempDirSync } from './temp.mjs'
 import { installSkill, listInstalledSkills } from '../lib/skill-install.js'
 
 const CDN_HOST = 'cdn.example.com'
@@ -41,7 +40,7 @@ const SKILL_MD = [
 ].join('\n')
 
 function workspace() {
-  return mkdtempSync(path.join(tmpdir(), 'bazaar-skill-domain-'))
+  return tempDirSync('bazaar-skill-domain-')
 }
 
 function packageBytes(files) {
@@ -203,7 +202,7 @@ function skillProvider(id, options = {}) {
 }
 
 function managerWith(views) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'bazaar-skill-session-'))
+  const dataDir = tempDirSync('bazaar-skill-session-')
   return new SessionManager({
     ctx: {
       agents: {

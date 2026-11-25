@@ -14,12 +14,12 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
 
 import { createConnectorStore } from '../lib/providers/workbuddy/connector-store.js'
+import { tempDirSync } from './temp.mjs'
 
 const CATALOG = [
   {
@@ -55,7 +55,7 @@ const CATALOG = [
 ]
 
 function makeStore() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'bz-connstore-'))
+  const dir = tempDirSync('bz-connstore-')
   return {
     dir,
     store: createConnectorStore({

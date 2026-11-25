@@ -1,18 +1,14 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { WorkBuddyConnector } from '../lib/connector.js'
 import { createAccountService } from '../lib/wb-accounts.js'
 import { createAccountStore } from '../lib/wb-vault.js'
+import { tempDir } from './temp.mjs'
 
 const API = '/v2/plugin'
 const HOUR = 3_600_000
-
-async function tempDir(prefix = 'bz-accounts-') {
-  return fs.mkdtemp(path.join(os.tmpdir(), prefix))
-}
 
 /** 假 fetch：分派三个端点，记录调用。返回真实 Response 以走到 `.text()`。 */
 function makeFetch(handler) {

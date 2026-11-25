@@ -15,10 +15,8 @@
 
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { test } from 'node:test'
+import { tempDirSync } from './temp.mjs'
 
 import { CODES } from '../lib/provider/errors.js'
 import { createProviderRegistry } from '../lib/provider/registry.js'
@@ -113,7 +111,7 @@ function fakeAccounts(options = {}) {
 }
 
 async function harness(options = {}) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'bz-accounts-bce4b8-'))
+  const dataDir = tempDirSync('bz-accounts-bce4b8-')
   const registry = createProviderRegistry({
     session: {
       async clearProvider(id) {
@@ -146,7 +144,8 @@ async function harness(options = {}) {
     release,
     cleanup() {
       release()
-      rmSync(dataDir, { recursive: true, force: true })
+      // 删目录交给 test/temp.mjs 的登记表统一收口（q5-005）：这里再手写一遍 rmSync
+      // 只会让「谁负责删」出现第二个答案，而漏删是静默的。
     },
   }
 }

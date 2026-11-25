@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { zipSync, strToU8 } from 'fflate'
+import { tempDir } from './temp.mjs'
 
 import {
   installSkill,
@@ -19,7 +20,7 @@ const CDN_HOST = 'cdn.example.com'
 const DOWNLOAD_URL = `https://${CDN_HOST}/skills/word-docx-v1.0.0.zip`
 
 async function workspace() {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'bz-skill-'))
+  return tempDir('bz-skill-')
 }
 
 /** A market zip: one outer folder holding SKILL.md plus caller extras. */

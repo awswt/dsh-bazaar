@@ -79,7 +79,7 @@ ESLint 跑两遍是刻意的：`--suppress-all` 的清单按 `file+rule` 记**�
 1. **门控重入会静默吞掉变更**（`lib/connectors.js:1038-1058`）。旧实现用一个模块级 `applying` 布尔做重入保护，而 `setSession()` 自己会调一次 `reapply()`，紧接着调用方的 `reapply(agent)` 命中布尔直接返回——「取消本会话停用」这类真实变更被丢掉，deny 一直是旧的。现在是每 agent 一条 promise 队列（`applyQueue`）：并发排队，谁也不会被吞。改这段别再退回布尔。
 2. **deny 用了旧值就永远不生效**（`lib/connectors.js:1063-1069`）。`applyNow()` 里的 `key` 必须由**本次刚算出的** `deny` 生成（`deny.slice().sort().join(',')`），不能拿 `applied` 里缓存的 key 或上一次的 deny 去算；一旦 key 没变，`previous.key === key` 直接 return，`restrict` 不会被调用，旧 deny 继续生效。
 3. **路由残留会让热重载用失效闭包应答**（`lib/webui.js`）。注册前按 `ownRoutePath()` 清理自己前缀的陈旧条目——判据是 `key === PREFIX || key.startsWith(PREFIX + '/')`，不是裸 `startsWith(PREFIX)`，否则会误删别的插件的 `/dsh-bazaar-next/*`、`/api/dsh-bazaar/*`。provider 分组路由另外由 `releaseProviderRoutes()` 在 dispose 时先释放（`lib/index.js` 的 `ctx.effect` 顺序：先路由，后连接器与会话）。
-4. **两处 armory 取值已删除，别再捡回来**。旧前端在两处读 `ctx.get('remote.mcpManager')` 并各带一套降级分支（军械库不可用就退成本地视图）；1.0.0 全部删除，`lib/client.js` 只走 `/dsh-bazaar/*` 自己的路由。`lib/` 里现在只剩注释提到 armory（`mcp-patch.js` 说明 patch 约定对齐 dsh-armory 2.5.9，`connectors.js:757` 说明折叠约定）。任何 `remote.mcpManager` 都是回归。
+4. **两处 armory 取值已删除，别再捡回来**。旧前端在两处读军械库桥接（`ctx.get()` 取 `remote` 命名空间下的 `mcpManager`）并各带一套降级分支（军械库不可用就退成本地视图）；1.0.0 全部删除，`lib/client.js` 只走 `/dsh-bazaar/*` 自己的路由。`lib/` 里现在只剩注释提到 armory（`mcp-patch.js` 说明 patch 约定对齐 dsh-armory 2.5.9，`connectors.js:757` 说明折叠约定）。再读取该桥接取值一律算回归——`test/legacy-name-scan.test.mjs` 把 `remote` + `mcpManager` 拼成的字面量列进了禁止表，命中即红。
 
 ## 其它既定约束
 

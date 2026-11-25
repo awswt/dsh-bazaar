@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { WorkBuddyConnector } from '../lib/connector.js'
+import { tempDir } from './temp.mjs'
 
 const API = '/v2/plugin'
 const HOUR = 3_600_000
-
-async function tempDir(prefix = 'bz-layer-') {
-  return fs.mkdtemp(path.join(os.tmpdir(), prefix))
-}
 
 function makeFetch(handler) {
   const calls = []

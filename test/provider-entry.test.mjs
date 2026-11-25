@@ -10,12 +10,12 @@
  */
 
 import assert from 'node:assert/strict'
-import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { promises as fs } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { tempDir } from './temp.mjs'
 
 import { apply } from '../lib/index.js'
 import { CODES } from '../lib/provider/errors.js'
@@ -27,7 +27,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const HOST = '127.0.0.1:3080'
 
 async function harness(config = {}) {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-provider-entry-'))
+  const dataDir = await tempDir('bz-provider-entry-')
   const routes = new Map()
   const notices = []
   const agent = {

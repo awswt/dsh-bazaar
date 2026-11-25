@@ -12,7 +12,7 @@
  * 因此「本次新建/改动的物料必须格式化」是默认效果（组 5 再加静态扫描断言新增文件都在面内）。
  */
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -212,6 +212,9 @@ export async function main() {
   )
 
   const notOk = checks.filter((c) => !c.ok)
+  // 临时清单是脚本自己的产物，跑完必须带走：留一个 `bazaar-gate-*` 目录就等于每次
+  // `npm run check` 都在 %TEMP% 里加一份（q5-005 的对账口径就包含它）。
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   forward(
     '\nquality gate: ' + (checks.length - notOk.length) + '/' + checks.length + ' checks passed\n',
   )

@@ -25,6 +25,41 @@ import { fileURLToPath } from 'node:url'
 
 const DEFAULT_ENV_FILE = 'api-tests/http-client.env.json'
 
+/**
+ * 单个请求的上限（毫秒）。
+ *
+ * 为什么要钉死：`fetch` 默认没有超时。链路脚本连不上服务、或服务端挂住不响应时，
+ * 执行器会一直等下去——质量门看起来"卡住了"，而真因是某个块永远不返回。
+ * 超时被折成一条带 code 的失败（`BAZAAR_TEST_TIMEOUT`），并指明脚本与块名，
+ * 这样「哪个链路的哪一块断在超时上」在结论里直接可读，不用回头翻日志（q5-006）。
+ */
+export const REQUEST_TIMEOUT_MS = 30_000
+
+/** 超时错误用固定 code 标识，调用方（用例/CI）可以只判 code 而不解析文案。 */
+export const TIMEOUT_CODE = 'BAZAAR_TEST_TIMEOUT'
+
+/** 构造带 code 的超时失败：脚本名 + 块名 + 上限都必须出现在文案里，否则定位不到块。 */
+function timeoutError(file, label, timeoutMs) {
+  const error = new Error(
+    `${file} @${label}: request exceeded ${timeoutMs}ms without a response ` +
+      `(cancel via AbortSignal.timeout)`,
+  )
+  error.code = TIMEOUT_CODE
+  error.file = file
+  error.block = label
+  error.timeoutMs = timeoutMs
+  return error
+}
+
+/** AbortSignal.timeout 在 Node 里以 TimeoutError 拒绝；个别实现包成 AbortError。 */
+function isTimeout(error) {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    /^Time(d)?outError$|^AbortError$/.test(error.name ?? '')
+  )
+}
+
 function parseArgs(argv) {
   const files = []
   const options = { baseUrl: '', env: '', envFile: DEFAULT_ENV_FILE, quiet: false }
@@ -207,7 +242,7 @@ async function loadEnvScope(envFile, envName) {
 
 async function runFile(file, options, env) {
   const source = await readFile(file, 'utf8')
-  const report = { file, tests: [], logs: [], requests: 0, quiet: options.quiet }
+  const report = { file, tests: [], blocks: [], logs: [], requests: 0, quiet: options.quiet }
   const client = createClient(report)
 
   for (const block of splitBlocks(source)) {
@@ -241,7 +276,18 @@ async function runFile(file, options, env) {
     }
 
     report.requests += 1
-    const response = await fetch(url.text, init)
+    // 逐块的下标必须是**块起点**：`report.tests.length` 就是这块开始前已有的条数。
+    // 旧实现取「已通过的条数」当下标（filter(passed).length），前一块只要失败过一条，
+    // 后续块的切片就会落在旧区间上——「前块红、本块绿」会被判成本块也红（q5-003）。
+    const blockStart = report.tests.length
+    const timeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
+    let response
+    try {
+      response = await fetch(url.text, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+    } catch (error) {
+      if (isTimeout(error) === true) throw timeoutError(file, label, timeoutMs)
+      throw error
+    }
     const text = await response.text()
     let parsedBody
     try {
@@ -249,7 +295,6 @@ async function runFile(file, options, env) {
     } catch {
       parsedBody = text
     }
-    const before = report.tests.filter((test) => test.passed === true).length
     if (parsed.script.trim() !== '') {
       const runner = new Function('client', 'response', parsed.script)
       runner(client, {
@@ -258,7 +303,18 @@ async function runFile(file, options, env) {
         headers: Object.fromEntries(response.headers),
       })
     }
-    const blockFailed = report.tests.slice(before).some((test) => test.passed !== true)
+    const blockTests = report.tests.slice(blockStart)
+    const blockFailed = blockTests.some((test) => test.passed !== true)
+    // 逐块结论同时进报告：只把 PASS/FAIL 打在 stdout 上，用例就没法断言「哪一块被判成了什么」，
+    // 而这里恰恰是 q5-003 出过错的地方——结论必须可被断言，不能只可被肉眼看见。
+    report.blocks.push({
+      label,
+      method: parsed.method,
+      url: url.text,
+      status: response.status,
+      tests: blockTests.length,
+      verdict: blockFailed ? 'FAIL' : 'PASS',
+    })
     if (report.quiet !== true) {
       const verdict = blockFailed ? 'FAIL' : 'PASS'
       process.stdout.write(

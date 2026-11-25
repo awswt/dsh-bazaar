@@ -14,14 +14,14 @@
  */
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { createApiServer } from './api-http-server.mjs'
 import { loadEnv, runFiles } from './api-script-runner.mjs'
+import { tempDir } from './temp.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const ENV_FILE = path.join(ROOT, 'api-tests', 'http-client.env.json')
@@ -44,12 +44,11 @@ describe('api-tests 链路脚本在仓内 harness 上可复现', () => {
     const address = api.server.address()
     base = 'http://127.0.0.1:' + address.port
     env = await loadEnv(ENV_FILE, '')
-    scratch = await mkdtemp(path.join(tmpdir(), 'bz-chain-scratch-'))
+    scratch = await tempDir('bz-chain-scratch-')
   })
 
   after(async () => {
     if (api !== undefined) await api.close()
-    if (scratch !== undefined) await rm(scratch, { recursive: true, force: true })
   })
 
   /** 用给到的 HTTP 地址跑一个 .http 文件，返回 runner 的汇总。 */

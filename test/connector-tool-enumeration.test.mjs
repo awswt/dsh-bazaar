@@ -2,10 +2,10 @@
 // 旧代码只探测 definitions()，导致 toolCount 恒为 0、连接器永远显示"未连接"。
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { createConnectorController } from '../lib/connectors.js'
+import { tempDir } from './temp.mjs'
 
 function catalog() {
   return {
@@ -28,7 +28,7 @@ function catalog() {
 }
 
 async function setup(toolsService) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-schemas-'))
+  const root = await tempDir('bz-schemas-')
   const profileDir = path.join(root, 'profile')
   const dataDir = path.join(root, 'data')
   await fs.mkdir(profileDir, { recursive: true })

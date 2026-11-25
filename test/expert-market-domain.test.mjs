@@ -9,10 +9,7 @@
  * 假 HTTP server：它验证的是「门户挂了回落到公开快照」这条真实分支，而不是打真实市场。
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
 import http from 'node:http'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { test } from 'node:test'
 
 import { createActiveProviderSet } from '../lib/provider/active-set.js'
@@ -23,6 +20,7 @@ import { createProviderRegistry } from '../lib/provider/registry.js'
 import { createWorkbuddyProvider } from '../lib/providers/workbuddy/index.js'
 import { MarketClient } from '../lib/providers/workbuddy/market.js'
 import { SessionManager } from '../lib/session.js'
+import { tempDirSync } from './temp.mjs'
 
 /**
  * 会话适配器：同时满足注册表（clearProvider）与活跃集（readActive/writeActive）两个注入点。
@@ -136,7 +134,7 @@ function expertProvider(id, options = {}) {
 
 /** 只有面板那一侧需要的 SessionManager 依赖：没有 agent 时 selectExpert 不挂子插件。 */
 function managerWith(views, bundles) {
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'bazaar-expert-domain-'))
+  const dataDir = tempDirSync('bazaar-expert-domain-')
   return new SessionManager({
     ctx: {
       agents: {
@@ -351,7 +349,7 @@ test('在线门户失败时回落到公开快照，分组仍标成 ok 并带 war
   try {
     const market = new MarketClient({
       baseUrl: 'http://127.0.0.1:' + port,
-      cacheDir: mkdtempSync(path.join(tmpdir(), 'bazaar-expert-snapshot-')),
+      cacheDir: tempDirSync('bazaar-expert-snapshot-'),
       allowHosts: ['127.0.0.1'],
       allowInsecureLoopback: true,
     })

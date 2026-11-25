@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { createMnemonDetector, detectMnemon, MNEMON_PACKAGE, mnemonCandidates, ownProfileDir } from '../lib/mnemon.js'
+import { tempDir } from './temp.mjs'
 
 /** 造一个假的 `node_modules/dsh-mnemon`，内容只够探测器读。 */
 async function makePackage(dir, pkg) {
@@ -16,7 +16,7 @@ async function makePackage(dir, pkg) {
  * 值为 null 表示"目录在、文件不在"的半装状态。
  */
 async function makeHome(layout) {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-mnemon-'))
+  const home = await tempDir('bz-mnemon-')
   for (const [relative, pkg] of Object.entries(layout)) {
     const full = path.join(home, relative)
     if (pkg === null) {
@@ -91,7 +91,7 @@ test('detectMnemon says no when the package is missing, broken, or the wrong pac
   assert.equal((await detectMnemon({ dshHome: impostor })).available, false)
 
   // package.json 是坏 JSON。
-  const garbage = await fs.mkdtemp(path.join(os.tmpdir(), 'bz-mnemon-bad-'))
+  const garbage = await tempDir('bz-mnemon-bad-')
   const dir = path.join(garbage, 'profiles', 'node_modules', 'dsh-mnemon')
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(path.join(dir, 'package.json'), '{ not json', 'utf8')

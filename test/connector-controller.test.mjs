@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { createConnectorController } from '../lib/connectors.js'
 import { readMcpServers } from '../lib/mcp-patch.js'
-
-async function tempDir(prefix = 'bz-flow-') {
-  return fs.mkdtemp(path.join(os.tmpdir(), prefix))
-}
+import { tempDir } from './temp.mjs'
 
 function fakeToolsService(definitions = []) {
   const calls = []

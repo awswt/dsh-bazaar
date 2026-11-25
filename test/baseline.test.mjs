@@ -135,6 +135,9 @@ const ENFORCED_BY_CONSTRUCTION = [
   'test/baseline.test.mjs',
   'test/ui-harness.mjs',
   'test/two-screen-e2e.test.mjs',
+  'test/temp.mjs',
+  'test/temp-dirs.test.mjs',
+  'test/harness-guards.test.mjs',
   'docs/e2e-baseline.md',
 ]
 

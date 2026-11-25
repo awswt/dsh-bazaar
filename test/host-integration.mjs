@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import os from 'node:os'
 import path from 'node:path'
-import { promises as fs } from 'node:fs'
 import { apply } from '../lib/index.js'
+import { tempDir } from './temp.mjs'
 
-const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oh-host-'))
+const dataDir = await tempDir('oh-host-')
 const sections = []
 const providers = []
 const commands = []

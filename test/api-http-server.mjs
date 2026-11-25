@@ -15,11 +15,10 @@
  * - GET  /__test/store-file：只读返回 provider store 的磁盘快照，供后置校验断言落盘字段。
  */
 
-import { promises as fs } from 'node:fs'
+import { promises as fs, rmSync } from 'node:fs'
 import http from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { describeAuth } from '../lib/auth.js'
 import { BundleStore } from '../lib/bundle.js'
@@ -36,6 +35,7 @@ import { MarketClient } from '../lib/providers/workbuddy/market.js'
 import { PortalMarket } from '../lib/providers/workbuddy/portal.js'
 import { createAccountService } from '../lib/wb-accounts.js'
 import { registerWebUi } from '../lib/webui.js'
+import { tempDirSync } from './temp.mjs'
 
 /** 编排会话建议端口，避免与宿主/并发 change 的默认端口冲突。 */
 export const API_PORT = 39320
@@ -172,8 +172,9 @@ function createRouteTable() {
  */
 export async function createApiServer(options = {}) {
   const ownsDataDir = options.dataDir === undefined
-  const dataDir =
-    options.dataDir ?? mkdtempSync(path.join(tmpdir(), 'bz-api-' + ISOLATION_TAG + '-'))
+  // 自建的临时 profile 同样进 test/temp.mjs 的登记表：close() 正常删掉是第一道，
+  // 进程退出兜底是第二道（harness 被 Ctrl+C / 断言提前抛错打断时，close() 轮不到）。
+  const dataDir = options.dataDir ?? tempDirSync('bz-api-' + ISOLATION_TAG + '-')
   const cacheDir = path.join(dataDir, 'cache')
   const accountsDir = path.join(dataDir, 'accounts')
   const urlConfig = Object.freeze({
@@ -391,13 +392,22 @@ export async function createApiServer(options = {}) {
   }
 }
 
+/**
+ * 判断「本文件就是这个进程的入口」。
+ *
+ * 必须走 `fileURLToPath`：`new URL(import.meta.url).pathname` 是**百分号编码**串
+ * （`E:/a%20b/代码/api-http-server.mjs`），与 `process.argv[1]` 的原始路径永远不相等。
+ * 于是 isMain 恒为 false，`node test/api-http-server.mjs` 静默退出——链路脚本实跑时
+ * 看到的是「服务没起来」而不是「入口判定写错了」，排查成本全落在错的地方（q5-007）。
+ */
+export function resolvesToEntry(moduleUrl, argv1) {
+  if (argv1 === undefined) return false
+  return path.resolve(argv1) === path.resolve(fileURLToPath(moduleUrl))
+}
+
 // 直接 `node test/api-http-server.mjs` 时自启，供 api-tests 链路脚本实跑；
 // 被 import 时只导出 createApiServer，不产生监听副作用。
-const isMain =
-  typeof process !== 'undefined' &&
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) ===
-    path.resolve(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'))
+const isMain = typeof process !== 'undefined' && resolvesToEntry(import.meta.url, process.argv[1])
 if (isMain) {
   createApiServer().then((api) => {
     // 硬杀（Stop-Process）拦不住，但 Ctrl+C / 正常退出必须把临时 profile 带走。

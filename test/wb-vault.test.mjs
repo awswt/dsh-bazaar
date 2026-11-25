@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import {
@@ -11,9 +10,7 @@ import {
   normalizeExpiry,
 } from '../lib/wb-vault.js'
 
-async function tempDir(prefix = 'bz-vault-') {
-  return fs.mkdtemp(path.join(os.tmpdir(), prefix))
-}
+import { tempDir } from './temp.mjs'
 
 const HOUR = 3_600_000
 
