@@ -23,3 +23,6 @@ openspec/
 
 # 设计令牌文档（开发件，本地保留）
 DESIGN.md
+
+# 开发规范（本地保留，不进仓库）
+AGENTS.md

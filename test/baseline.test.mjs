@@ -186,7 +186,6 @@ test('免检名单与磁盘双向对账：没有漏登记，也没有已重写�
     ...collectSources('test'),
     ...collectDocs(),
     'README.md',
-    'AGENTS.md',
   ]
 
   // 死条目：清单里点名了，磁盘上却找不到——通常是文件改名/删除后忘了划掉。

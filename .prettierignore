@@ -73,3 +73,4 @@ eslint-suppressions.json
 /cordis.patch.yml
 /.gitignore
 /.prettierignore
+/AGENTS.md

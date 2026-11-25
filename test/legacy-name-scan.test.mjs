@@ -32,7 +32,7 @@ export const FORBIDDEN = [
   { label: '旧 e2e 环境变量', token: join('WBH', '_LIB_ROOT') },
   { label: '旧 CSS 前缀', token: join('wb', 'h-') },
   { label: '旧登录 id 前缀', token: join('wb', 'h_') },
-  // 旧军械库桥接取值：AGENTS.md 坑位 4 说「任何该取值都是回归」，那就必须由扫描面兜住，
+  // 旧军械库桥接取值：开发规范（本地 AGENTS.md 坑位 4）说「任何该取值都是回归」，那就必须由扫描面兜住，
   // 否则这句话只是一句口号——真正删除它的人可能是下一次从源仓搬代码进来的人（q5-004）。
   { label: '旧军械库桥接取值', token: join('remote', '.', 'mcpManager') },
 ]
