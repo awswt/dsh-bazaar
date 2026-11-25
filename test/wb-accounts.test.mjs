@@ -239,9 +239,25 @@ test('start requires an explicit region and rejects a missing one with BAZAAR_PA
   const missing = await service.start()
   assert.equal(missing.code, 'BAZAAR_PARAM_INVALID')
   assert.equal(missing.field, 'region')
+  // 拒绝要能自证口径：可接受取值与"收到什么"都要回显，否则界面只能显示一句无从下手的错。
+  assert.deepEqual(missing.admitted, ['cn', 'global'])
+  assert.match(missing.error, /收到 未提供/)
   const started = await service.start('cn')
   assert.equal(started.region, 'cn')
   assert.match(started.verificationUri, /^https:\/\/www\.codebuddy\.cn\/login/)
+})
+
+test('start echoes the rejected region so the caller does not have to guess', async () => {
+  const { service } = await makeService({ fetchImpl: signedInFetch() })
+  for (const bad of ['mars', 'CN', ' cn ']) {
+    const rejected = await service.start(bad)
+    assert.equal(rejected.code, 'BAZAAR_PARAM_INVALID', bad)
+    assert.equal(rejected.field, 'region')
+    assert.deepEqual(rejected.admitted, ['cn', 'global'])
+    // 前后空白不算合法取值，但错误里要照原样回显，才看得出是形状问题还是取值问题。
+    assert.ok(rejected.error.includes(bad), 'error must quote the received value: ' + rejected.error)
+    assert.equal(rejected.region, undefined, '被拒时不得回 region，免得调用方当成成功')
+  }
 })
 
 test('start surfaces an upstream failure as a value, not an exception', async () => {
