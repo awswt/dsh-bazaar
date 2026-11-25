@@ -204,48 +204,93 @@ function githubToken() {
 const GITHUB_API = 'https://api.github.com'
 const GITHUB_REPO = 'awswt/dsh-bazaar'
 
-async function githubRequest(url, { method = 'GET', token, headers = {}, body } = {}) {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'dsh-bazaar-release',
-      ...(token !== null ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-    ...(body === undefined ? {} : { body }),
-  })
-  const text = await response.text()
-  if (!response.ok) throw new Error(`GitHub ${method} ${url} failed (${response.status}): ${text.slice(0, 600)}`)
-  return text === '' ? null : JSON.parse(text)
+/** GitHub 边缘节点对写请求偶发 500（空 body），实测重试一次就成功。只对 5xx 重试，4xx 是请求本身的问题。 */
+async function githubRequest(url, { method = 'GET', token, headers = {}, body, retries = 4 } = {}) {
+  let lastError = ''
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'dsh-bazaar-release',
+        ...(token !== null ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+      ...(body === undefined ? {} : { body }),
+    })
+    const text = await response.text()
+    if (response.ok) return text === '' ? null : JSON.parse(text)
+    lastError = `GitHub ${method} ${url} failed (${response.status}): ${text.slice(0, 600)}`
+    if (response.status < 500 || attempt === retries) break
+    forward(`  GitHub ${response.status}, retrying (${attempt + 1}/${retries})...\n`)
+    await new Promise(resolve => setTimeout(resolve, 800 * (attempt + 1)))
+  }
+  throw new Error(lastError)
 }
 
-/** 创建 GitHub Release 并上传 tgz；返回 html_url 供日志核对。 */
+/**
+ * 创建 GitHub Release 并上传 tgz；返回 html_url 供日志核对。
+ *
+ * 幂等：先查 tag 的 Release 是否已存在（上一次 5xx 可能"建成功了但应答丢了"），
+ * 存在就复用而不是再建——否则重试会得到 422，或造出两个同名 Release。
+ * asset 同理，同名已上传就跳过。
+ */
 async function publishGithubRelease({ tag, notes, artifact, token }) {
-  const release = await githubRequest(`${GITHUB_API}/repos/${GITHUB_REPO}/releases`, {
-    method: 'POST',
-    token,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      tag_name: tag,
-      name: tag,
-      body: notes,
-      draft: false,
-      prerelease: false,
-    }),
-  })
-  if (artifact !== null) {
-    const bytes = await readFile(artifact.file)
-    const uploadUrl = String(release?.upload_url ?? '').replace(/\\{\\?.*$/, '')
-    await githubRequest(`${uploadUrl}?name=${encodeURIComponent(artifact.name)}`, {
-      method: 'POST',
+  const base = `${GITHUB_API}/repos/${GITHUB_REPO}/releases`
+  let release = null
+  try {
+    release = await githubRequest(`${base}/tags/${tag}`, { token })
+  } catch {
+    // 404 表示还没有；其它错误（含 5xx）交给下面的 POST 路径，能建就建。
+  }
+
+  if (release === null) {
+    try {
+      release = await githubRequest(base, {
+        method: 'POST',
+        token,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag_name: tag,
+          name: tag,
+          body: notes,
+          draft: false,
+          prerelease: false,
+        }),
+      })
+    } catch (error) {
+      // POST 超时/5xx 后 Release 可能已经建好，最后兜底查一次再决定要不要放弃。
+      release = await githubRequest(`${base}/tags/${tag}`, { token }).catch(() => null)
+      if (release === null) throw error
+    }
+  }
+
+  // 复用已有 Release 时把正文更新成本次的 notes（诊断/重试留下的 probe 正文要能被纠正）。
+  if (release.body !== notes) {
+    release = await githubRequest(`${base}/${release.id}`, {
+      method: 'PATCH',
       token,
-      headers: { 'Content-Type': 'application/gzip' },
-      body: bytes,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: notes }),
     })
   }
-  return release?.html_url ?? `${GITHUB_API}/repos/${GITHUB_REPO}/releases/tags/${tag}`
+
+  if (artifact !== null) {
+    const assets = Array.isArray(release?.assets) ? release.assets : []
+    if (assets.some(item => item?.name === artifact.name) === false) {
+      const bytes = await readFile(artifact.file)
+      // upload_url 形如 .../assets{?name,label}，按花括号截断即可，免去正则里的反斜杠。
+      const uploadUrl = String(release?.upload_url ?? '').split('{')[0]
+      await githubRequest(`${uploadUrl}?name=${encodeURIComponent(artifact.name)}`, {
+        method: 'POST',
+        token,
+        headers: { 'Content-Type': 'application/gzip' },
+        body: bytes,
+      })
+    }
+  }
+  return release?.html_url ?? `${base}/tags/${tag}`
 }
 
 async function main() {
