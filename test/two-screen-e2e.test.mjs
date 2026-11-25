@@ -111,7 +111,8 @@ function createBazaar(config) {
     }
   }
   const expertsGroup = (providerId, query, categoryId) => {
-    const provider = state.providers.find((item) => item.id === providerId)
+    // 平铺入口跨库搜索时不带 provider，夹具回落到第一家，等价于真实服务端的全库遍历。
+    const provider = state.providers.find((item) => item.id === providerId) ?? state.providers[0]
     if (state.failExperts.has(providerId) === true) {
       return {
         providerId: providerId,
@@ -483,7 +484,12 @@ async function bootScreen(service, screen, props) {
   const loaded = await loadClientModule(harness, { document: document, window: globalThis.window })
   const internals = loaded.exports.__internals
   const h = harness.React.createElement
-  const component = screen === 'settings' ? internals.SettingsScreen : internals.SessionPanel
+  const component =
+    screen === 'settings'
+      ? internals.SettingsScreen
+      : screen === 'composer'
+        ? internals.ComposerEntry
+        : internals.SessionPanel
   harness.mount(h(component, props ?? { sessionId: 's1' }))
   const ui = {
     harness: harness,
@@ -972,6 +978,66 @@ test('屏 B：当前使用 / 已选 / 未启用库条目三种态互相可区分
       (node) => node.props['data-kind'] === 'readonly' && node.text.trim() === 'workbuddy',
     )
     assert.equal(ids.length >= 1, true, '分组头要有只读 providerId 徽标')
+  } finally {
+    await service.close()
+  }
+})
+
+test('平铺入口：四个分类按钮独立切换，默认只显最近使用，搜索后才拉列表', async () => {
+  const service = await startBazaar()
+  try {
+    const ui = await bootScreen(service, 'composer')
+
+    // 从左到右四个按钮，顺序固定 expert / skill / connector / provider。
+    const tabs = ui.tree.findAll((node) => node.props['data-flat-tab'] !== undefined)
+    assert.deepEqual(
+      tabs.map((node) => node.props['data-flat-tab']),
+      ['expert', 'skill', 'connector', 'provider'],
+    )
+    assert.equal(ui.texts().includes('默认只显示最近使用的'), false, '未点分类时不展开面板')
+
+    const before = requestsTo(service, '/experts').length
+    await ui.harness.fire(ui.find('data-flat-tab', 'expert'), 'onClick', {})
+    await ui.settle()
+    assert.equal(
+      ui.texts().includes('暂无最近使用的专家；在上方搜索框输入关键词即可查找。'),
+      true,
+      '未搜索前只显最近使用空态，不主动展示列表',
+    )
+    assert.equal(
+      requestsTo(service, '/experts').length,
+      before,
+      '打开分类面板不应触发列表请求（默认不主动展示列表）',
+    )
+    assert.equal(ui.find('data-flat-search', 'expert') !== null, true)
+
+    // 输入关键词 → 等 220ms 防抖 → 发请求 → 展示结果列表。
+    await ui.harness.fire(ui.find('data-flat-search', 'expert'), 'onChange', {
+      target: { value: '数据' },
+    })
+    // 等 220ms 防抖真正触发后再 settle；用轮询而非固定 sleep，避免 React/网络调度抖动。
+    let listed
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await ui.harness.flush()
+      listed = requestsTo(service, '/experts')
+      if (listed.length >= 1 && ui.tree.text.includes('数据工程师')) break
+    }
+    assert.ok(listed.length >= 1, '搜索后应请求专家列表')
+    assert.equal(listed.at(-1).search.get('query'), '数据')
+    assert.equal(listed.at(-1).search.get('pageSize'), '8')
+    assert.equal(ui.tree.text.includes('数据工程师'), true, '搜索后应展示列表条目')
+
+    // 切到另一个分类：面板换成该分类，expert 的搜索框消失。
+    await ui.harness.fire(ui.find('data-flat-tab', 'connector'), 'onClick', {})
+    await ui.settle()
+    assert.equal(ui.find('data-flat-search', 'connector') !== null, true)
+    assert.equal(ui.find('data-flat-search', 'expert') === null, true)
+
+    // 再点同一个按钮收起面板。
+    await ui.harness.fire(ui.find('data-flat-tab', 'connector'), 'onClick', {})
+    await ui.settle()
+    assert.equal(ui.find('data-flat-search', 'connector') === null, true, '再次点击应收起')
   } finally {
     await service.close()
   }

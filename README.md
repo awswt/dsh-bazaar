@@ -139,25 +139,25 @@ dsh plugin --profile <profile> add file:/path/to/dsh-bazaar
 
 `providers.<id>`（只由该 provider 读，插件入口不解释）：
 
-| 键                                 | 默认                             | 说明                                                                                                                                                            |
-| ---------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `authMode`                         | `none`                           | 四值之一：`none`（匿名，只读公开快照）/ `bearer`（凭据作头值，配 `headerPrefix`）/ `header`（`headerName` 必填，缺失 → `BAZAAR_AUTH_HEADER_MISSING`）/ `cookie` |
-| `headerName`                       | `Authorization`                  | 认证头名；`header` 模式必填                                                                                                                                     |
-| `headerPrefix`                     | `Bearer `                        | 头值前缀；`header` 模式默认空串                                                                                                                                 |
-| `credentialRef`                    | `BAZAAR_<UPPER_SNAKE(id)>_TOKEN` | 覆盖凭据名                                                                                                                                                      |
-| `allowHosts`                       | provider 自带上游域名集合        | 出网白名单，逐 provider 独立                                                                                                                                    |
-| `allowInsecureLoopback`            | `false`                          | 仅对本 provider 放行本机 http                                                                                                                                   |
-| `portalBaseUrl`                    | `https://www.workbuddy.cn`       | 门户市场地址                                                                                                                                                    |
-| `marketBaseUrl`                    | 快照市场地址                     | 快照市场地址                                                                                                                                                    |
-| `regions`                          | `[cn, global]`                   | 登录区域**候选集**（决定下拉出现哪几项，不是默认选中值；界面永不预选）                                                                                          |
-| `timeoutMs` / `retries`            | `20000` / `1`                    | 出网超时与重试                                                                                                                                                  |
-| `cacheTtlMs` / `staleWhileErrorMs` | `21600000` / `604800000`         | 市场缓存 TTL 与出错时旧缓存窗口                                                                                                                                 |
-| `maxPackageBytes`                  | `33554432`（32 MiB）             | 技能包体积上限，超出 → `BAZAAR_SKILL_PACKAGE_TOO_LARGE`                                                                                                         |
-| `maxEntries`                       | `400`                            | 技能包条目数上限                                                                                                                                                |
-| `maxTotalBytes`                    | `100663296`（96 MiB）            | 解压后总量上限                                                                                                                                                  |
-| `fetchImpl`                        | 未设置（回落全局 `fetch`）       | **仅供测试注入 HTTP 替身**，生产配置不要设置                                                                                                                    |
+| 键                                 | 默认                             | 说明                                                                                                                                                      |
+| ---------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authMode`                         | `none`                           | 四值之一：`none`（无额外认证头）/ `bearer`（凭据作头值，配 `headerPrefix`）/ `header`（`headerName` 必填，缺失 → `BAZAAR_AUTH_HEADER_MISSING`）/ `cookie` |
+| `headerName`                       | `Authorization`                  | 认证头名；`header` 模式必填                                                                                                                               |
+| `headerPrefix`                     | `Bearer `                        | 头值前缀；`header` 模式默认空串                                                                                                                           |
+| `credentialRef`                    | `BAZAAR_<UPPER_SNAKE(id)>_TOKEN` | 覆盖凭据名                                                                                                                                                |
+| `allowHosts`                       | provider 自带上游域名集合        | 出网白名单，逐 provider 独立                                                                                                                              |
+| `allowInsecureLoopback`            | `false`                          | 仅对本 provider 放行本机 http                                                                                                                             |
+| `portalBaseUrl`                    | `https://www.workbuddy.cn`       | 门户市场地址                                                                                                                                              |
+| `marketBaseUrl`                    | 快照市场地址                     | 快照市场地址                                                                                                                                              |
+| `regions`                          | `[cn, global]`                   | 登录区域**候选集**（决定下拉出现哪几项，不是默认选中值；界面永不预选）                                                                                    |
+| `timeoutMs` / `retries`            | `20000` / `1`                    | 出网超时与重试                                                                                                                                            |
+| `cacheTtlMs` / `staleWhileErrorMs` | `21600000` / `604800000`         | 市场缓存 TTL 与出错时旧缓存窗口                                                                                                                           |
+| `maxPackageBytes`                  | `33554432`（32 MiB）             | 技能包体积上限，超出 → `BAZAAR_SKILL_PACKAGE_TOO_LARGE`                                                                                                   |
+| `maxEntries`                       | `400`                            | 技能包条目数上限                                                                                                                                          |
+| `maxTotalBytes`                    | `100663296`（96 MiB）            | 解压后总量上限                                                                                                                                            |
+| `fetchImpl`                        | 未设置（回落全局 `fetch`）       | **仅供测试注入 HTTP 替身**，生产配置不要设置                                                                                                              |
 
-`marketMode`（`portal` / `cos` / `auto`）不再出现在配置里：它降为内置 provider 的内部选择（先门户、失败回落快照）。
+`marketMode` 默认为 `portal`：只走需要账号 token 的在线市场，不再回落到公开快照。`cos` / `auto` 仅在显式配置时可用。
 
 ## 1.0.0 移除的东西
 

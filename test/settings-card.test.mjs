@@ -109,7 +109,7 @@ test('apply 注册设置页与导航图标，两条共用同一个 id', async ()
   assert.equal(section.id, 'bazaar-account')
   assert.equal(typeof section.component, 'function')
   assert.equal(typeof icon.component, 'function')
-  assert.equal(section.label, 'bazaar')
+  assert.equal(section.label, '集市')
   assert.equal(section.order, 25)
   // 图标那条只带 id（宿主按 id 配对），order 不是它的契约。
   assert.equal(icon.order === undefined || icon.order === 25, true)
