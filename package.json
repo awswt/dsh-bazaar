@@ -1,6 +1,6 @@
 {
   "name": "dsh-bazaar",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Multi-provider marketplace plugin for DeepSeek Harness: provider registry, expert/skill/connector/account markets, session assistant panel.",
   "type": "module",
   "main": "lib/index.js",
