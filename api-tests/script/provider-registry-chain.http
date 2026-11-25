@@ -36,7 +36,10 @@ Content-Type: application/json
         client.assert(body.credential.name.indexOf("BAZAAR_") === 0, "凭据名应以 BAZAAR_ 开头：" + body.credential.name);
         client.assert(typeof body.credential.configured === "boolean", "configured 必须是布尔值");
         client.assert(typeof body.cache.dir === "string", "缓存目录必须回显");
-        client.assert(body.cache.dir.indexOf("providers/" + client.global.get("PROVIDER_ID") + "/cache") >= 0, "缓存目录必须落在该 provider 自己的目录下：" + body.cache.dir);
+        // 目录分隔符随平台（Windows 是反斜杠），先归一化再断言，否则同一条断言在
+        // 两个平台上一个绿一个红。
+        const normalizedDir = String(body.cache.dir).replace(/\\/g, "/");
+        client.assert(normalizedDir.indexOf("providers/" + client.global.get("PROVIDER_ID") + "/cache") >= 0, "缓存目录必须落在该 provider 自己的目录下：" + body.cache.dir);
         client.assert(typeof body.cache.entries === "number" && body.cache.entries >= 0, "缓存条目数必须是非负数字");
         client.assert(typeof body.cache.bytes === "number" && body.cache.bytes >= 0, "缓存字节数必须是非负数字");
         const raw = JSON.stringify(body);
@@ -49,39 +52,65 @@ Content-Type: application/json
     });
 %}
 
-### 链路 BAZAAR-PROVIDER-READ-001 / 步骤3：同一 providerId 下账号区读到的是该库自己的账号组（溯源 spec:account-auth#账号区界面状态语义）
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤3：同一 providerId 下账号区读到的是该库自己的账号组，且条目真的来自账号库（溯源 spec:account-auth#账号区界面状态语义）
 # @name providerAccounts
 GET {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts?sessionId=bce4b8-api
 Content-Type: application/json
 
 > {%
-    client.test("账号分组带 providerId 且只含本库", function() {
+    client.test("账号分组带 providerId、条目非空且不回令牌", function() {
         client.assert(response.status === 200, "期望 200，实际 " + response.status);
         client.assert(response.body.ok === true, "账号读取应成功");
         const pid = client.global.get("PROVIDER_ID");
-        (response.body.items || []).forEach(function(item) {
+        client.assert(Array.isArray(response.body.groups) === true, "groups 应为数组");
+        client.assert(response.body.groups.length === 1, "指定 provider 时只应回一组，实际 " + response.body.groups.length);
+        const group = response.body.groups[0];
+        client.assert(group.providerId === pid, "分组 providerId 必须是 " + pid + "，实际 " + group.providerId);
+        client.assert(group.status === "ok", "harness 已播夹具账号，分组必须是 ok，实际 " + group.status);
+        client.assert(Array.isArray(group.items) === true, "分组 items 应为数组");
+        // 空清单不得通过：账号域回的是 own/all/summary 视图，若分组投影漏了 items，
+        // 这里必须红——否则「账号区永远空白」也能全绿。
+        client.assert(group.items.length >= 1, "账号分组必须读到夹具账号，实际 " + group.items.length);
+        client.assert(response.body.items.length === group.items.length, "顶层 items 必须与分组条目数一致");
+        client.assert(group.total === group.items.length, "total 必须等于条目数，实际 " + group.total);
+        client.assert(group.matchedTotal === group.items.length, "matchedTotal 必须等于条目数，实际 " + group.matchedTotal);
+        client.assert(typeof group.summary === "object" && group.summary !== null, "summary 视图必须留在分组上");
+        client.assert(group.summary.count === group.items.length, "summary.count 必须与条目数一致，实际 " + group.summary.count);
+        client.assert(Array.isArray(group.own) === true, "own 视图必须留在分组上");
+        group.items.forEach(function(item) {
             client.assert(item.providerId === pid, "账号条目 providerId 必须是 " + pid + "，实际 " + item.providerId);
+            client.assert(typeof item.accountId === "string" && item.accountId.length > 0, "账号条目必须带 accountId");
+            client.assert(item.hasToken === true, "夹具账号应带可判定令牌状态");
         });
-        (response.body.groups || []).forEach(function(group) {
-            client.assert(group.providerId === pid, "分组 providerId 必须是 " + pid + "，实际 " + group.providerId);
-            client.assert(typeof group.status === "string", "分组必须带 status");
-        });
+        const raw = JSON.stringify(response.body);
+        client.assert(raw.indexOf("accessToken") === -1 && raw.indexOf("refreshToken") === -1, "账号读取不得回显令牌字段");
+        client.assert(raw.indexOf("fixture-access-token") === -1, "账号读取不得回显令牌值");
     });
 %}
 
-### 链路 BAZAAR-PROVIDER-READ-001 / 步骤4：连接器读取按 provider 分组，条目带 providerId 与状态判定字段（溯源 spec:connector-market#连接器列表按 provider 分组并支持筛选）
+### 链路 BAZAAR-PROVIDER-READ-001 / 步骤4：连接器读取按 provider 分组，条目带 providerId 与可判定的授权状态（溯源 spec:connector-market#连接器列表按 provider 分组并支持筛选）
 # @name providerConnectors
 GET {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/connectors?sessionId=bce4b8-api
 Content-Type: application/json
 
 > {%
-    client.test("连接器分组与条目均带 providerId，未授权状态可判定", function() {
+    client.test("连接器分组与条目均带 providerId，授权状态可判定", function() {
         client.assert(response.status === 200, "期望 200，实际 " + response.status);
         const pid = client.global.get("PROVIDER_ID");
         client.assert(Array.isArray(response.body.groups) === true, "groups 应为数组");
-        (response.body.items || []).forEach(function(item) {
+        client.assert(response.body.groups.length === 1, "指定 provider 时只应回一组，实际 " + response.body.groups.length);
+        const group = response.body.groups[0];
+        client.assert(group.providerId === pid, "分组 providerId 必须是 " + pid + "，实际 " + group.providerId);
+        client.assert(group.status === "ok", "连接器分组必须是 ok，实际 " + group.status);
+        client.assert(Array.isArray(group.items) === true, "分组 items 应为数组");
+        client.assert(group.items.length >= 1, "连接器市场必须读到条目，实际 " + group.items.length);
+        client.assert(group.total === group.items.length, "total 必须等于条目数，实际 " + group.total);
+        client.assert(response.body.items.length === group.items.length, "顶层 items 必须与分组条目数一致");
+        group.items.forEach(function(item) {
             client.assert(item.providerId === pid, "连接器条目 providerId 必须是 " + pid);
             client.assert(typeof item.id === "string" && item.id.length > 0, "连接器 id 不可为空");
+            client.assert(typeof item.authorized === "boolean", "authorized 必须是布尔值");
+            client.assert(typeof item.connected === "boolean", "connected 必须是布尔值");
         });
     });
 %}
@@ -137,6 +166,7 @@ Content-Type: application/json
         client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
         client.assert(response.body.field === "region", "必须点名 region 字段，实际 " + response.body.field);
         client.assert(String(response.body.message).indexOf("登录区域必选") >= 0, "错误文案必须说明区域必选：" + response.body.message);
+        client.assert(Array.isArray(response.body.admitted) === true && response.body.admitted.join(",") === "cn,global", "必须回显可接受取值，实际 " + JSON.stringify(response.body.admitted));
     });
 %}
 
@@ -153,6 +183,7 @@ Content-Type: application/json
         client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
         client.assert(response.body.field === "region", "必须点名 region 字段");
         client.assert(String(response.body.message).indexOf("mars") >= 0, "错误文案必须回显收到的值：" + response.body.message);
+        client.assert(Array.isArray(response.body.admitted) === true && response.body.admitted.join(",") === "cn,global", "必须回显可接受取值，实际 " + JSON.stringify(response.body.admitted));
     });
 %}
 
@@ -172,7 +203,26 @@ Content-Type: application/json
     });
 %}
 
-### 链路 BAZAAR-LOGIN-REGION-001 / 步骤4：providerId 校验通过后动作真实落到 provider（list 动作不触发登录，只验证分组路由能下传）
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤4：动作字段缺失（空 payload）被拒且点名字段，不能靠默认值蒙混成 list（反例：`{providerId}` 空动作）
+# @name accountActionWithoutAction
+POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
+Content-Type: application/json
+
+{"providerId":"{{PROVIDER_ID}}"}
+
+> {%
+    client.test("缺 action 被拒，字段级错误可锚定", function() {
+        client.assert(response.status === 400, "期望 400，实际 " + response.status);
+        client.assert(response.body.ok === false, "必须标记失败");
+        client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
+        client.assert(response.body.field === "action", "必须点名 action 字段，实际 " + response.body.field);
+        client.assert(String(response.body.message).indexOf("账号动作必选") >= 0, "错误文案必须说明动作必选：" + response.body.message);
+        client.assert(Array.isArray(response.body.supported) === true && response.body.supported.join(",") === "list,login,poll,cancel,refresh,remove", "必须回显支持的动作，实际 " + JSON.stringify(response.body.supported));
+        client.assert(response.body.own === undefined, "被拒绝的空 payload 不得回账号列表");
+    });
+%}
+
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤5：providerId 校验通过后动作真实落到 provider（list 动作不触发登录，只验证分组路由能下传）
 # @name accountListByGroupedRoute
 POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
 Content-Type: application/json
@@ -185,8 +235,9 @@ Content-Type: application/json
         // list 动作直接回账号服务的结果（own/all/summary/pending），不额外包 ok
         client.assert(Array.isArray(response.body.own) === true, "own 应为数组");
         client.assert(Array.isArray(response.body.all) === true, "all 应为数组");
+        client.assert(response.body.all.length >= 1, "响应必须带 harness 播的夹具账号，实际 " + response.body.all.length);
         client.assert(typeof response.body.summary === "object" && response.body.summary !== null, "summary 必须回显");
-        client.assert(typeof response.body.summary.count === "number", "summary.count 必须是数字");
+        client.assert(response.body.summary.count === response.body.all.length, "summary.count 必须与 all 条目数一致：" + response.body.summary.count);
         const raw = JSON.stringify(response.body);
         client.assert(raw.indexOf("accessToken") === -1 && raw.indexOf("refreshToken") === -1, "账号列表不得回显令牌字段");
     });
