@@ -78,7 +78,10 @@ async function harness(config = {}) {
     },
     logger: { info() {}, warn: (message) => notices.push(String(message)) },
   }
-  apply(ctx, {
+  // ctxWrap 默认是恒等：绝大多数用例测的是 provider 层接线，不关心宿主 ctx 的 set 语义。
+  // 只有「provide 声明」那条用例传 cordisLikeCtx 进来，把宿主 Proxy 的行为补上。
+  const hostCtx = config.ctxWrap ? config.ctxWrap(ctx) : ctx
+  apply(hostCtx, {
     dataDir,
     authMode: 'none',
     fetchImpl: async () => {
@@ -130,7 +133,18 @@ async function harness(config = {}) {
 
   const getRequest = (urlPath) => ({ method: 'GET', url: urlPath, headers: { host: HOST } })
 
-  return { ctx, agent, call, callText, reply, requestFor, getRequest, routes, notices, dataDir }
+  return {
+    ctx: hostCtx,
+    agent,
+    call,
+    callText,
+    reply,
+    requestFor,
+    getRequest,
+    routes,
+    notices,
+    dataDir,
+  }
 }
 
 /** 契约完整、离线可用的示例 provider：五域全声明，方法只返回固定值。 */
@@ -305,6 +319,55 @@ test('经 ctx.bazaar 注销 provider 后，列举与活跃集同步收缩', asyn
   )
   const seen = await setup.call({ action: 'providers' })
   assert.deepEqual(seen.activeProviders, ['other'], '注销后该会话不再向 acme 派发')
+})
+
+/**
+ * 宿主 cordis 的 ctx 是 Proxy：往未声明的属性上 set 会直接抛
+ * `cannot set property "<name>" without provide`，而 apply() 是同步执行的——抛出去等于
+ * 整个插件加载失败（路由、工具、会话状态全都不会挂上，面板两处报「读取失败」）。
+ * 所以 apply() 必须走 ctx.provide() 声明服务，不能裸赋值。这个假 ctx 把那条语义抄过来：
+ * 有 provide 就先声明、声明过才允许赋值，否则 Proxy 的 set trap 抛错。
+ */
+function cordisLikeCtx(base) {
+  const declared = new Set()
+  const target = {
+    ...base,
+    provide(name, value) {
+      declared.add(name)
+      target[name] = value
+      return () => {}
+    },
+  }
+  return new Proxy(target, {
+    set(obj, prop, value) {
+      if (typeof prop === 'symbol' || prop in obj || declared.has(prop)) {
+        obj[prop] = value
+        return true
+      }
+      throw new Error(`cannot set property "${String(prop)}" without provide`)
+    },
+  })
+}
+
+test('apply() 在 cordis 风格 ctx 上走 provide 声明 bazaar，不裸赋值', async () => {
+  // 反证先跑：未被 provide 声明过的名字，set 必须抛（否则这套假 ctx 复现不了宿主语义，
+  // 下面的正向断言就变成空转）。用独立实例，避免 apply() 的声明把这条反证提前满足掉。
+  const probe = cordisLikeCtx({})
+  assert.throws(
+    () => {
+      probe.bazaar = {}
+    },
+    /cannot set property "bazaar" without provide/,
+    '假 ctx 必须复现宿主的 set trap 语义，否则这条用例是空转',
+  )
+  // 正向：apply() 没被中途抛错打断，且服务、路由都在。
+  const setup = await harness({ ctxWrap: cordisLikeCtx })
+  assert.equal(typeof setup.ctx.bazaar?.providers?.register, 'function')
+  assert.equal(setup.ctx.bazaar.providers.list()[0].id, BUILTIN_PROVIDER_ID)
+  assert.ok(
+    setup.routes.has('exact ' + PROVIDER_ROUTES.list),
+    'apply() 没被中途抛错打断：路由必须注册到 webServer',
+  )
 })
 
 test('provider 路由前缀与 lib/webui.js 的 PREFIX 同源', async () => {

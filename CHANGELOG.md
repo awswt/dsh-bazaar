@@ -51,6 +51,8 @@
 
 - **安装后宿主启动失败（1.0.0 内测事故）**：`@deepseek-ai/dsh-tools` 曾写在 `dependencies` 里，安装时被包管理器提升进 profile 成为一份独立副本；宿主升级后启动预检按运行时版本判定该副本的 `peerDependencies` 不兼容，把它置成 `disabled`，`tools` 服务失去提供者，`tool-executor-native` 与 `agent-loop` 两个 required 插件未激活，宿主以 fatal 退出。修法两半：工具定义改由 `lib/tool-def.js` 本地实现（与宿主 `defineTool` 同形，`ToolsService.register()` 的行为不变），且 `package.json` 的 `dependencies` 不再声明任何 `@deepseek-ai/*`。两半缺一即复发，`test/tool-def.test.mjs` 对「`dependencies` 里零宿主包」与「`lib/` 下零宿主 import」各有断言并带反向控制。
 
+- **面板两处「读取失败」：插件根本没加载完（1.0.0 内测事故）**：`apply()` 里用裸赋值挂 `ctx.bazaar`，而宿主 cordis 的 `ctx` 是 Proxy，set trap 对未声明的属性直接抛 `cannot set property "bazaar" without provide`。`apply()` 是同步执行的，这一抛等于插件未加载——`lib/index.js:239` 已调用的 `ctx.inject(['webServer'])` 回调永不触发，13 条 `/dsh-bazaar/*` 路由一条也没注册，`ctx.tools.register()` 也没跑到，前端设置页报「专家库注册表读取失败」、会话面板报「会话状态读取失败」（两者都是 `/dsh-bazaar/providers`、`/dsh-bazaar/state` 拿到 404）。修法：`ctx.provide('bazaar', service)`，裸对象 ctx（测试夹具、第三方宿主）没有 `provide` 时退回普通赋值。`test/provider-entry.test.mjs` 的 `cordisLikeCtx()` 复现宿主 set trap 语义，先反证裸赋值会抛、再正向断言 provide 挂上了且路由注册成功。
+
 ### 不做的事
 
 - **不迁移旧数据**：不探测、不提示、不读取旧数据目录（`<DSH_HOME>/workbuddy-helper`、`<DSH_HOME>/workbuddy-vault`）下的任何残留，升级后需重新登录并重新选择专家库。
