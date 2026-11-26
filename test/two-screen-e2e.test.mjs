@@ -82,6 +82,9 @@ function createBazaar(config) {
     accounts: { workbuddy: [], demo: [] },
     expert: null,
     installed: { pdf: 'workbuddy' },
+    // 全局启用开关：缺省全启用，只有显式写进来的 id 才关闭（与
+    // `lib/provider/preferences.js` 的「只记 false」口径一致）。
+    disabledProviders: new Set(),
     ...config,
   }
   const statusOf = (providerId) => {
@@ -216,6 +219,20 @@ function createBazaar(config) {
     }
   }
 
+  /**
+   * 一次请求要问哪几家库。
+   *
+   * 真实服务端（`lib/provider/domains.js` 的 `targetGroups`）不带 `provider` 时按本会话
+   * 活跃集逐家问；带一个 `provider` 时只问那一家（单库重试用这条）。夹具必须镜像这个
+   * 语义，否则「多库并列」在测试里永远是单库，冲突与分区失败都测不出来。
+   */
+  function targetProviderIds(url) {
+    const only = url.searchParams.get('provider')
+    if (only !== null && only !== '') return [only]
+    if (state.activeProviders.length > 0) return state.activeProviders.slice()
+    return state.providers.map((provider) => provider.id)
+  }
+
   async function handle(request, response) {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     const body = request.method === 'POST' ? await readBody(request) : null
@@ -231,9 +248,18 @@ function createBazaar(config) {
       sendJson(response, 200, {
         ok: true,
         items: state.providers.map((provider) =>
-          Object.assign({}, provider, { active: state.activeProviders.includes(provider.id) }),
+          Object.assign({}, provider, {
+            active: state.activeProviders.includes(provider.id),
+            // 全局开关（设置页），与「本会话选了没」是两件事：禁用时 active 恒 false。
+            enabled: state.disabledProviders.has(provider.id) !== true,
+            storedActive: state.activeProviders.includes(provider.id),
+          }),
         ),
         activeProviders: state.activeProviders.slice(),
+        storedActiveProviders: state.activeProviders.slice(),
+        disabledProviders: state.providers
+          .map((provider) => provider.id)
+          .filter((id) => state.disabledProviders.has(id) === true),
         defaultProvider: '',
       })
       return true
@@ -290,16 +316,15 @@ function createBazaar(config) {
       return true
     }
     if (path === '/dsh-bazaar/experts' && request.method === 'GET') {
-      const providerId = url.searchParams.get('provider') ?? ''
       sendJson(response, 200, {
         ok: true,
-        groups: [
+        groups: targetProviderIds(url).map((providerId) =>
           expertsGroup(
             providerId,
             url.searchParams.get('query') ?? '',
             url.searchParams.get('categoryId') ?? '',
           ),
-        ],
+        ),
         items: [],
         activeProviders: state.activeProviders.slice(),
         matchedTotal: 1,
@@ -310,10 +335,9 @@ function createBazaar(config) {
       return true
     }
     if (path === '/dsh-bazaar/skill-market' && request.method === 'GET') {
-      const providerId = url.searchParams.get('provider') ?? ''
       sendJson(response, 200, {
         ok: true,
-        groups: [skillsGroup(providerId)],
+        groups: targetProviderIds(url).map((providerId) => skillsGroup(providerId)),
         items: [],
         total: 1,
         activeProviders: state.activeProviders.slice(),
@@ -366,6 +390,44 @@ function createBazaar(config) {
         }
         sendJson(response, 200, statusOf(providerId))
         return true
+      }
+      if (sub === 'enabled') {
+        if (state.providers.some((item) => item.id === providerId) !== true) {
+          sendJson(response, 400, {
+            ok: false,
+            code: 'BAZAAR_PROVIDER_UNKNOWN',
+            error: '未知专家库 ' + providerId,
+            registered: state.providers.map((item) => item.id),
+          })
+          return true
+        }
+        if (request.method === 'GET') {
+          sendJson(response, 200, {
+            ok: true,
+            providerId: providerId,
+            enabled: state.disabledProviders.has(providerId) !== true,
+          })
+          return true
+        }
+        if (request.method === 'POST') {
+          if (typeof body.enabled !== 'boolean') {
+            sendJson(response, 400, {
+              ok: false,
+              code: 'BAZAAR_PARAM_INVALID',
+              error: 'enabled 必须是布尔值',
+              field: 'enabled',
+            })
+            return true
+          }
+          if (body.enabled === true) state.disabledProviders.delete(providerId)
+          else state.disabledProviders.add(providerId)
+          sendJson(response, 200, {
+            ok: true,
+            providerId: providerId,
+            enabled: state.disabledProviders.has(providerId) !== true,
+          })
+          return true
+        }
       }
       if (sub === 'accounts' && request.method === 'GET') {
         sendJson(response, 200, {
@@ -556,11 +618,11 @@ test('屏 A：页签由注册表驱动，每页签固定四块，凭据只读', 
     const tablist = ui.tree.find((node) => node.props.role === 'tablist')
     assert.notEqual(tablist, null, '页签条必须是 role=tablist')
 
-    // 四块固定顺序：账号 / 凭据 / 缓存 / 连接器授权
+    // 四块固定顺序：账号与登录 / 宿主凭据 / 本地缓存 / 连接器授权
     const headings = ui.tree
       .findAll((node) => node.kind === 'host' && node.type === 'h4')
       .map((node) => node.text.trim())
-    assert.deepEqual(headings, ['账号', '凭据', '缓存', '连接器授权'])
+    assert.deepEqual(headings, ['账号与登录', '宿主凭据', '本地缓存', '连接器授权'])
 
     // 凭据值只读：role=textbox + aria-readonly，且块内没有可编辑控件
     const credentialValue = ui.tree.find(
@@ -581,6 +643,71 @@ test('屏 A：页签由注册表驱动，每页签固定四块，凭据只读', 
     assert.equal(login.props.disabled, true, '凭据未配置时登录必须禁用')
     assert.equal(login.props['aria-disabled'], 'true')
     assert.equal(ui.texts().includes('禁用：凭据未配置'), true)
+  } finally {
+    await service.close()
+  }
+})
+
+test('屏 A：Provider 栏内建全局启用开关，禁用后写明它不在会话面板显示', async () => {
+  const service = await startBazaar()
+  try {
+    const ui = await bootScreen(service, 'settings')
+    const toggle = ui.find('data-settings-switch', 'workbuddy')
+    assert.notEqual(toggle, null, '每个 Provider 页签都要有全局启用开关')
+    assert.equal(toggle.props.role, 'switch')
+    assert.equal(toggle.props['aria-checked'], 'true', '缺省即启用')
+    assert.equal(toggle.props['aria-label'], '启用 WorkBuddy 专家库')
+
+    const before = requestsTo(service, '/enabled').length
+    await ui.click('data-settings-switch', 'workbuddy')
+    const writes = requestsTo(service, '/enabled').slice(before)
+    assert.equal(writes.length, 1, '点一下写一次')
+    assert.equal(writes[0].pathname.endsWith('/providers/workbuddy/enabled'), true)
+    assert.deepEqual(writes[0].body, { providerId: 'workbuddy', enabled: false })
+
+    // 禁用后：开关翻转 + 页签带「已禁用」+ banner 说清后果（不是只靠颜色）
+    const off = ui.find('data-settings-switch', 'workbuddy')
+    assert.equal(off.props['aria-checked'], 'false')
+    assert.equal(off.props['data-on'], 'false')
+    assert.equal(ui.texts().includes('已禁用 · 不在会话面板显示'), true, '要写清禁用后的效果')
+    assert.equal(ui.find('id', 'tab-workbuddy').props['data-disabled'], 'true')
+
+    // 全局开关是机器级：禁用不动本会话已有的选择（由 storedActive 承载）。
+    assert.equal(
+      ui.texts().includes('会话里已做的选择会被冻结保留，重新启用即恢复'),
+      true,
+      '要说明禁用不是清空会话选择',
+    )
+
+    // 再点一次恢复启用
+    const beforeOn = requestsTo(service, '/enabled').length
+    await ui.click('data-settings-switch', 'workbuddy')
+    const onWrites = requestsTo(service, '/enabled').slice(beforeOn)
+    assert.equal(onWrites.length, 1)
+    assert.deepEqual(onWrites[0].body, { providerId: 'workbuddy', enabled: true })
+    assert.equal(ui.find('data-settings-switch', 'workbuddy').props['aria-checked'], 'true')
+  } finally {
+    await service.close()
+  }
+})
+
+test('屏 B：全部 Provider 被全局禁用时给空态引导，且一条条目请求都不发', async () => {
+  const service = await startBazaar({ disabledProviders: new Set(['workbuddy', 'demo']) })
+  try {
+    const ui = await bootScreen(service, 'session')
+    assert.equal(ui.texts().includes('所有 Provider 都已在设置页禁用'), true, '全禁用要说明原因')
+    assert.equal(
+      ui.texts().includes('请前往「设置 → 集市」启用至少一个 Provider'),
+      true,
+      '要指路，而不是只报「空」',
+    )
+    assert.notEqual(ui.find('data-goto-settings', 'true'), null, '要给前往设置页的入口')
+    assert.equal(requestsTo(service, '/experts').length, 0, '一家都不显示就不该取条目')
+    assert.equal(
+      ui.tree.findAll((node) => node.props['data-provider-switch'] !== undefined).length,
+      0,
+      '被全局禁用的库连开关都不出现',
+    )
   } finally {
     await service.close()
   }
@@ -781,69 +908,61 @@ test('屏 A：未选登录区域时界面拦住且一个请求都不发；服务
   }
 })
 
-test('屏 B：开关组可选（不是必填），全不勾选时给空态入口，且服务端接受空集', async () => {
+test('屏 B：来源开关组可选（不是必填），全不选时给空态入口，且服务端接受空集', async () => {
   const service = await startBazaar()
   try {
     const ui = await bootScreen(service, 'session')
-    assert.equal(ui.texts().includes('选择专家库（可多选）'), true)
-    assert.equal(ui.texts().includes('可选'), true, '开关组要标「可选」而不是必填')
-    const group = ui.tree.find((node) => node.props.role === 'group')
-    assert.notEqual(group, null, '开关组要有 role=group')
+    const group = ui.find('aria-label', '本会话来源开关')
+    assert.notEqual(group, null, '来源开关组要有可读名称')
+    assert.equal(group.props.role, 'group')
     assert.equal(group.props['aria-required'], undefined, '开关组不得标 aria-required')
     assert.equal(
       ui.tree.findAll((node) => node.props['aria-required'] === 'true').length,
       0,
       '屏 B 没有任何必填字段',
     )
-    const switches = ui.tree.findAll(
-      (node) => node.kind === 'host' && node.type === 'input' && node.props.type === 'checkbox',
-    )
-    assert.equal(switches.length, 2, '每个已注册 provider 一个多选开关')
+
+    // 开关是 `button role="switch"`：文字状态写在旁边，不只靠颜色。
+    const switches = ui.tree.findAll((node) => node.props['data-provider-switch'] !== undefined)
+    assert.equal(switches.length, 2, '每个已注册 provider 一个来源开关')
+    assert.equal(switches[0].props.role, 'switch')
     assert.equal(switches[0].props['aria-checked'], 'false')
-    assert.equal(ui.texts().includes('未启用'), true, '开关要带文字状态而不是只靠颜色')
+    assert.equal(ui.texts().includes('未选'), true, '开关要带文字状态')
 
-    assert.equal(ui.texts().includes('尚未选择专家库'), true, '全不勾选是合法空态')
+    assert.equal(ui.texts().includes('尚未选择本会话的来源'), true, '全不选是合法空态')
 
-    // 勾上第一家：写入活跃集
-    const toggle = ui.find('data-switch', 'workbuddy')
-    await ui.harness.fire(toggle, 'onChange', { target: { checked: true } })
-    await ui.settle()
+    // 打开第一家：写入活跃集
+    await ui.click('data-provider-switch', 'workbuddy')
     const writes = requestsTo(service, '/providers/active')
     assert.equal(writes.length >= 1, true)
     assert.deepEqual(writes.at(-1).body.activeProviders, ['workbuddy'])
 
-    // 取消勾选：回到空态，服务端接受空数组
-    await ui.harness.fire(ui.find('data-switch', 'workbuddy'), 'onChange', {
-      target: { checked: false },
-    })
-    await ui.settle()
+    // 再点一次关掉：回到空态，服务端接受空数组
+    await ui.click('data-provider-switch', 'workbuddy')
     const afterClear = requestsTo(service, '/providers/active').at(-1)
     assert.deepEqual(afterClear.body.activeProviders, [], '清空是合法空态')
-    assert.equal(ui.texts().includes('尚未选择专家库'), true, '清空后回到空态')
-    assert.equal(ui.texts().includes('已启用'), false)
+    assert.equal(ui.texts().includes('尚未选择本会话的来源'), true, '清空后回到空态')
+    assert.equal(ui.texts().includes('当前使用'), false)
   } finally {
     await service.close()
   }
 })
 
-test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 memoryMarket 禁用搜索', async () => {
+test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 memoryMarket 不冒充空态', async () => {
   const service = await startBazaar()
   try {
     const ui = await bootScreen(service, 'session')
-    await ui.harness.fire(ui.find('data-switch', 'workbuddy'), 'onChange', {
-      target: { checked: true },
-    })
-    await ui.settle()
-    await ui.harness.fire(ui.find('data-switch', 'demo'), 'onChange', { target: { checked: true } })
-    await ui.settle()
+    // 来源开关是 `button role="switch"`：点一下即切换，不是勾选框的 onChange。
+    await ui.click('data-provider-switch', 'workbuddy')
+    await ui.click('data-provider-switch', 'demo')
+    // 技能在「技能与记忆」页签下：工作台按域分页签，默认停在「专家」。
+    await ui.click('data-domain-tab', 'skill')
 
     assert.equal(ui.texts().includes('WorkBuddy 专家库'), true)
     assert.equal(ui.texts().includes('示例库'), true)
-    assert.equal(ui.texts().includes('WorkBuddy 专家库 · 数据工程师'), true, '跨库同名要带库前缀')
 
     // 冲突：示例库里的 pdf 已由 WorkBuddy 安装 → 安装禁用 + 原因 + 查看已有安装
     assert.equal(ui.texts().includes('冲突'), true)
-    assert.equal(ui.texts().includes('禁用：已被 WorkBuddy 专家库 安装'), true)
     const blocked = ui.tree.findAll(
       (node) =>
         node.kind === 'host' &&
@@ -852,21 +971,22 @@ test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 me
         node.props.disabled === true,
     )
     assert.equal(blocked.length >= 1, true, '冲突条目的安装按钮必须禁用')
-    assert.equal(ui.texts().includes('查看已有安装'), true, '冲突要给「查看已有安装」入口')
-    assert.equal(ui.texts().includes('跨库同名不覆盖'), true, '冲突说明要写清为什么不覆盖')
+    assert.equal(
+      ui.texts().includes('查看已有安装（已被 WorkBuddy 专家库 安装）'),
+      true,
+      '冲突要给「查看已有安装」入口并写明是谁装的',
+    )
+    assert.equal(ui.texts().includes('跨来源同名不覆盖'), true, '冲突说明要写清为什么不覆盖')
     const installCallsBefore = requestsTo(service, '/skill-install').length
     assert.equal(installCallsBefore, 0, '冲突条目点不动，也就不会发安装请求')
 
-    // 未声明 memoryMarket：搜索框禁用 + 原因（示例库没有 memoryMarket）
-    const disabledSearch = ui.tree.findAll(
-      (node) =>
-        node.kind === 'host' &&
-        node.type === 'input' &&
-        node.props.disabled === true &&
-        node.props['aria-disabled'] === 'true',
-    )
-    assert.equal(disabledSearch.length >= 1, true, '未声明记忆市场的库要禁用记忆搜索')
+    // 未声明 memoryMarket：不拿「暂无条目」冒充空态，而是明说这一域没有。
     assert.equal(ui.texts().includes('禁用：未声明 memoryMarket'), true)
+    assert.equal(
+      ui.texts().includes('该 Provider 未声明 memoryMarket 能力'),
+      true,
+      '要解释清楚这不是空列表，而是没有这个能力',
+    )
 
     // 服务端仍会拒绝越权安装：直接 POST 拿到 409，与界面禁用形成双重保障。
     const conflictResponse = await fetch(service.baseUrl + 'dsh-bazaar/skill-install', {
@@ -881,21 +1001,18 @@ test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 me
   }
 })
 
-test('屏 B：单分区失败只红自己，重试只重发该库，搜索与分类只作用于本分区', async () => {
+test('屏 B：单分区失败只红自己，重试只重发该库，搜索与分类只在本分区内筛', async () => {
   const service = await startBazaar({ failExperts: new Set(['demo']) })
   try {
     const ui = await bootScreen(service, 'session')
-    await ui.harness.fire(ui.find('data-switch', 'workbuddy'), 'onChange', {
-      target: { checked: true },
-    })
-    await ui.settle()
-    await ui.harness.fire(ui.find('data-switch', 'demo'), 'onChange', { target: { checked: true } })
-    await ui.settle()
+    await ui.click('data-provider-switch', 'workbuddy')
+    await ui.click('data-provider-switch', 'demo')
 
     assert.equal(ui.texts().includes('只有这一家失败'), true, '失败分区要显示原因')
     assert.equal(ui.texts().includes('只有本分区报错'), true, '要说清影响面')
     assert.equal(ui.texts().includes('WorkBuddy 专家库 · 数据工程师'), true, '另一家照常显示条目')
 
+    // 单库重试：只重发失败的那一家，带 provider=demo。
     service.state.failExperts.delete('demo')
     const retry = ui.find('data-retry-group', 'demo')
     assert.notEqual(retry, null)
@@ -907,56 +1024,45 @@ test('屏 B：单分区失败只红自己，重试只重发该库，搜索与分
     assert.equal(after[0].search.get('provider'), 'demo', '且只重发失败那一家')
     assert.equal(ui.texts().includes('只有这一家失败'), false, '重试成功后错误消失')
 
-    // 搜索只带本库 provider 参数
-    const search = ui.find('aria-label', '搜索 WorkBuddy 专家库 的专家')
-    assert.notEqual(search, null)
+    // 搜索与分类都是本地区间筛：不发新请求，也不把别的库卷进来。
+    const search = ui.find('data-modal-search', 'true')
+    assert.notEqual(search, null, '工作台要有统一的筛选框')
     const searchBefore = requestsTo(service, '/experts').length
     await ui.harness.type(search, '数据')
-    await new Promise((resolve) => setTimeout(resolve, 260))
     await ui.settle()
-    const searched = requestsTo(service, '/experts').slice(searchBefore)
-    assert.equal(searched.length >= 1, true, '输入要触发本库搜索')
     assert.equal(
-      searched.every((item) => item.search.get('provider') === 'workbuddy'),
-      true,
+      requestsTo(service, '/experts').length,
+      searchBefore,
+      '筛选是本地筛，敲字不该再请求一遍服务端',
     )
-    assert.equal(searched.at(-1).search.get('query'), '数据')
+    assert.equal(ui.texts().includes('数据工程师'), true)
 
-    // 分类 chip 也只作用于本库
-    const chip = ui.tree.find(
-      (node) =>
-        node.kind === 'host' &&
-        node.type === 'button' &&
-        node.props['aria-pressed'] !== undefined &&
-        node.text.trim() === '数据',
-    )
-    assert.notEqual(chip, null, '分类 chip 要存在')
     const chipBefore = requestsTo(service, '/experts').length
-    await ui.harness.fire(chip, 'onClick', {})
-    await ui.settle()
-    const chipped = requestsTo(service, '/experts').slice(chipBefore)
-    assert.equal(chipped.length >= 1, true)
-    assert.equal(chipped.at(-1).search.get('categoryId'), 'data')
+    await ui.click('data-category-tab', 'eng')
+    assert.equal(requestsTo(service, '/experts').length, chipBefore, '分类同样是本地筛')
+    assert.equal(ui.texts().includes('数据工程师'), true, 'eng 分类下条目仍在')
   } finally {
     await service.close()
   }
 })
 
-test('屏 B：当前使用 / 已选 / 未启用库条目三种态互相可区分，providerId 只读', async () => {
+test('屏 B：当前使用 / 已选 / 未启用来源三种态互相可区分，providerId 只读', async () => {
   const service = await startBazaar()
   try {
     const ui = await bootScreen(service, 'session')
-    // 未勾选时：库条目仍然列出，但禁用并写明原因
+    // 一家都没选时：不列任何条目，先给「尚未选择来源」这个可操作的空态。
     assert.equal(
-      ui.texts().includes('禁用：未选择该专家库'),
+      ui.texts().includes('尚未选择本会话的来源'),
       true,
-      '未启用库的条目要禁用并说明原因',
+      '未选来源要说明原因，而不是假装它在加载',
+    )
+    assert.equal(
+      ui.texts().includes('勾选上方任意来源即可展示对应能力'),
+      true,
+      '未选不等于没有内容，要给可操作的下一步',
     )
 
-    await ui.harness.fire(ui.find('data-switch', 'workbuddy'), 'onChange', {
-      target: { checked: true },
-    })
-    await ui.settle()
+    await ui.click('data-provider-switch', 'workbuddy')
     // 选中一家后：条目可选
     const choose = ui.tree.findAll(
       (node) => node.kind === 'host' && node.type === 'button' && node.text.trim() === '选择',
@@ -975,7 +1081,7 @@ test('屏 B：当前使用 / 已选 / 未启用库条目三种态互相可区分
 
     // providerId 以只读徽标出现（不是可编辑输入）
     const ids = ui.tree.findAll(
-      (node) => node.props['data-kind'] === 'readonly' && node.text.trim() === 'workbuddy',
+      (node) => node.props['data-kind'] === 'muted' && node.text.trim() === 'workbuddy',
     )
     assert.equal(ids.length >= 1, true, '分组头要有只读 providerId 徽标')
   } finally {
@@ -983,61 +1089,45 @@ test('屏 B：当前使用 / 已选 / 未启用库条目三种态互相可区分
   }
 })
 
-test('平铺入口：四个分类按钮独立切换，默认只显最近使用，搜索后才拉列表', async () => {
+test('上浮面板：三个胶囊各自切换，搜索走本地筛，完整面板入口常驻', async () => {
   const service = await startBazaar()
   try {
     const ui = await bootScreen(service, 'composer')
 
-    // 从左到右四个按钮，顺序固定 expert / skill / connector / provider。
-    const tabs = ui.tree.findAll((node) => node.props['data-flat-tab'] !== undefined)
+    // 输入栏只留三个胶囊，顺序固定 expert / skill / connector（provider 入口已移除）。
+    const pills = ui.tree.findAll(
+      (node) => node.props['data-kind'] !== undefined && node.props['data-active'] !== undefined,
+    )
     assert.deepEqual(
-      tabs.map((node) => node.props['data-flat-tab']),
-      ['expert', 'skill', 'connector', 'provider'],
+      pills.map((node) => node.props['data-kind']),
+      ['expert', 'skill', 'connector'],
     )
-    assert.equal(ui.texts().includes('默认只显示最近使用的'), false, '未点分类时不展开面板')
+    assert.equal(ui.find('data-popover-search', 'expert'), null, '未点胶囊时不展开面板')
+    // 「完整面板」是常驻图标按钮，不占胶囊位。
+    assert.notEqual(ui.find('aria-label', '打开能力集市完整面板'), null)
 
+    // 一家都没选时：面板给引导空态，不请求条目列表。
     const before = requestsTo(service, '/experts').length
-    await ui.harness.fire(ui.find('data-flat-tab', 'expert'), 'onClick', {})
-    await ui.settle()
-    assert.equal(
-      ui.texts().includes('暂无最近使用的专家；在上方搜索框输入关键词即可查找。'),
-      true,
-      '未搜索前只显最近使用空态，不主动展示列表',
-    )
-    assert.equal(
-      requestsTo(service, '/experts').length,
-      before,
-      '打开分类面板不应触发列表请求（默认不主动展示列表）',
-    )
-    assert.equal(ui.find('data-flat-search', 'expert') !== null, true)
+    await ui.click('data-kind', 'expert')
+    assert.equal(ui.texts().includes('尚未选择会话来源'), true)
+    assert.equal(requestsTo(service, '/experts').length, before, '没有活跃来源就不该发列表请求')
 
-    // 输入关键词 → 等 220ms 防抖 → 发请求 → 展示结果列表。
-    await ui.harness.fire(ui.find('data-flat-search', 'expert'), 'onChange', {
-      target: { value: '数据' },
-    })
-    // 等 220ms 防抖真正触发后再 settle；用轮询而非固定 sleep，避免 React/网络调度抖动。
-    let listed
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      await ui.harness.flush()
-      listed = requestsTo(service, '/experts')
-      if (listed.length >= 1 && ui.tree.text.includes('数据工程师')) break
-    }
-    assert.ok(listed.length >= 1, '搜索后应请求专家列表')
-    assert.equal(listed.at(-1).search.get('query'), '数据')
-    assert.equal(listed.at(-1).search.get('pageSize'), '8')
-    assert.equal(ui.tree.text.includes('数据工程师'), true, '搜索后应展示列表条目')
-
-    // 切到另一个分类：面板换成该分类，expert 的搜索框消失。
-    await ui.harness.fire(ui.find('data-flat-tab', 'connector'), 'onClick', {})
+    // 选一家来源后展开专家：面板按来源过滤，条目出现。
+    await ui.click('data-provider', 'workbuddy')
     await ui.settle()
-    assert.equal(ui.find('data-flat-search', 'connector') !== null, true)
-    assert.equal(ui.find('data-flat-search', 'expert') === null, true)
+    assert.notEqual(ui.find('data-popover-search', 'expert'), null)
+    assert.equal(ui.texts().includes('数据工程师'), true, '选了来源后该库条目出现')
 
-    // 再点同一个按钮收起面板。
-    await ui.harness.fire(ui.find('data-flat-tab', 'connector'), 'onClick', {})
+    // 搜索是本地筛：不发新请求。
+    const searchBefore = requestsTo(service, '/experts').length
+    await ui.harness.type(ui.find('data-popover-search', 'expert'), '不存在')
     await ui.settle()
-    assert.equal(ui.find('data-flat-search', 'connector') === null, true, '再次点击应收起')
+    assert.equal(requestsTo(service, '/experts').length, searchBefore, '输入不触发请求')
+    assert.equal(ui.texts().includes('未找到匹配的专家'), true, '本地筛出空集要给空态')
+
+    // 点同一个胶囊收起。
+    await ui.click('data-kind', 'expert')
+    assert.equal(ui.find('data-popover-search', 'expert'), null, '再次点击应收起面板')
   } finally {
     await service.close()
   }

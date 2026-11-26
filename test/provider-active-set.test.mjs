@@ -190,20 +190,26 @@ test('面板、工具、命令、路由读同一份集合', async () => {
   )
 })
 
-test('providers 列举带 capabilities 与 active，且不含 impl', async () => {
+test('providers 列举带 capabilities、active、enabled 与 storedActive，且不含 impl', async () => {
   const setup = stack()
   await withTwo(setup)
   await setup.active.setActive('s1', ['demo'])
   const described = await setup.active.describeProviders('s1')
   assert.equal(described.defaultProvider, '')
   const demo = described.items.find((p) => p.id === 'demo')
+  // 四个状态字段互相不可替代：active=本会话选了它，enabled=设置页全局开关，
+  // storedActive=落盘选择（禁用期间被冻结，重新启用即恢复）。合成一个字段会让界面
+  // 无法区分「没选过」与「选了但被禁用」。
   assert.deepEqual(Object.keys(demo).sort(), [
     'active',
     'apiVersion',
     'capabilities',
     'displayName',
+    'enabled',
     'id',
+    'storedActive',
   ])
+  assert.equal(demo.enabled, true, '未记录偏好即启用')
   assert.equal(JSON.stringify(described).includes('impl'), false)
 })
 

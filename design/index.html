@@ -1,0 +1,3366 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dsh-bazaar · 能力集市面板 UI 重设计原型</title>
+    <style>
+      /* =====================================================================
+         DSH Host Token Simulation (模拟 DSH 宿主 --dsw-alias-* 主题变量)
+         插件本身不提供单独配色页，完全跟随 DSH 的浅色 / 深色宿主配置；
+         插件所有前景色与状态色均通过 --dsw-alias-* 与 color-mix() 自适应对比度。
+         ===================================================================== */
+      :root {
+        --dsw-alias-bg-canvas: #f5f6f8;
+        --dsw-alias-bg-layer-1: #ffffff;
+        --dsw-alias-bg-layer-2: #f3f4f6;
+        --dsw-alias-interactive-bg-hover: #f2f3f5;
+        --dsw-alias-label-primary: #0f1115;
+        --dsw-alias-label-secondary: #4e545e;
+        --dsw-alias-label-tertiary: #6e7582;
+        --dsw-alias-border-l1: rgba(15, 17, 21, 0.09);
+        --dsw-alias-border-l2: rgba(15, 17, 21, 0.16);
+        --dsw-alias-state-business-primary: #3b82f6;
+        --dsw-alias-state-success-primary: #16a34a;
+        --dsw-alias-state-warn-primary: #d97706;
+        --dsw-alias-state-error-primary: #dc2626;
+        --dsw-alias-bg-mask-1: rgba(15, 17, 21, 0.34);
+        --dsw-radius-sm: 8px;
+        --dsw-radius-md: 12px;
+        --dsw-radius-lg: 16px;
+        --dsw-canvas-ambient: radial-gradient(
+          900px 420px at 50% 0%,
+          rgba(59, 130, 246, 0.06),
+          transparent 70%
+        );
+        --dsw-shadow-card: 0 10px 36px rgba(15, 17, 21, 0.07), 0 2px 6px rgba(15, 17, 21, 0.04);
+        --dsw-shadow-modal: 0 24px 64px rgba(15, 17, 21, 0.18), 0 4px 16px rgba(15, 17, 21, 0.08);
+        --dsw-composer-glass: rgba(255, 255, 255, 0.96);
+      }
+
+      body[data-ds-dark-theme='true'] {
+        --dsw-alias-bg-canvas: #121417;
+        --dsw-alias-bg-layer-1: #1b1e23;
+        --dsw-alias-bg-layer-2: #252931;
+        --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.07);
+        --dsw-alias-label-primary: #f3f5f8;
+        --dsw-alias-label-secondary: #c5ccd6;
+        --dsw-alias-label-tertiary: #9aa2af;
+        --dsw-alias-border-l1: rgba(255, 255, 255, 0.1);
+        --dsw-alias-border-l2: rgba(255, 255, 255, 0.18);
+        --dsw-alias-state-business-primary: #60a5fa;
+        --dsw-alias-state-success-primary: #4ade80;
+        --dsw-alias-state-warn-primary: #fbbf24;
+        --dsw-alias-state-error-primary: #f87171;
+        --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.62);
+        --dsw-canvas-ambient:
+          radial-gradient(780px 380px at 30% 62%, rgba(202, 138, 4, 0.12), transparent 65%),
+          radial-gradient(640px 380px at 72% 70%, rgba(22, 163, 74, 0.1), transparent 65%);
+        --dsw-shadow-card: 0 18px 48px rgba(0, 0, 0, 0.48), 0 2px 8px rgba(0, 0, 0, 0.28);
+        --dsw-shadow-modal: 0 28px 72px rgba(0, 0, 0, 0.68);
+        --dsw-composer-glass: rgba(34, 38, 44, 0.88);
+      }
+
+      /* =====================================================================
+         Plugin Semantic Tokens (仅消费 --dsw-alias-* + color-mix，确保深浅双态高对比)
+         ===================================================================== */
+      body {
+        --bz-canvas: var(--dsw-alias-bg-canvas);
+        --bz-bg: var(--dsw-alias-bg-layer-1);
+        --bz-bg-alt: var(--dsw-alias-bg-layer-2);
+        --bz-row-hover: var(--dsw-alias-interactive-bg-hover);
+        --bz-fg: var(--dsw-alias-label-primary);
+        --bz-fg-secondary: var(--dsw-alias-label-secondary);
+        /* 次要说明文字往 primary 混入少量占比，保证在深/浅底色下均稳定可读 */
+        --bz-fg-dim: color-mix(
+          in srgb,
+          var(--dsw-alias-label-tertiary) 86%,
+          var(--dsw-alias-label-primary)
+        );
+        --bz-border: var(--dsw-alias-border-l1);
+        --bz-border-strong: var(--dsw-alias-border-l2);
+        --bz-accent: var(--dsw-alias-state-business-primary);
+        --bz-accent-fg: color-mix(in srgb, var(--bz-accent) 76%, var(--bz-fg));
+        --bz-accent-bg: color-mix(in srgb, var(--bz-accent) 14%, var(--bz-bg));
+        --bz-accent-ring: color-mix(in srgb, var(--bz-accent) 24%, transparent);
+        --bz-row-active: color-mix(in srgb, var(--bz-accent) 12%, var(--bz-bg));
+        --bz-ok: var(--dsw-alias-state-success-primary);
+        --bz-ok-fg: color-mix(in srgb, var(--bz-ok) 68%, var(--bz-fg));
+        --bz-ok-bg: color-mix(in srgb, var(--bz-ok) 15%, var(--bz-bg));
+        --bz-ok-line: color-mix(in srgb, var(--bz-ok) 42%, var(--bz-bg));
+        --bz-warn: var(--dsw-alias-state-warn-primary);
+        --bz-warn-fg: color-mix(in srgb, var(--bz-warn) 68%, var(--bz-fg));
+        --bz-warn-bg: color-mix(in srgb, var(--bz-warn) 16%, var(--bz-bg));
+        --bz-warn-line: color-mix(in srgb, var(--bz-warn) 42%, var(--bz-bg));
+        --bz-err: var(--dsw-alias-state-error-primary);
+        --bz-err-fg: color-mix(in srgb, var(--bz-err) 72%, var(--bz-fg));
+        --bz-err-bg: color-mix(in srgb, var(--bz-err) 15%, var(--bz-bg));
+        --bz-err-line: color-mix(in srgb, var(--bz-err) 42%, var(--bz-bg));
+        --bz-scrim: var(--dsw-alias-bg-mask-1);
+        --bz-btn-primary-bg: var(--bz-fg);
+        --bz-btn-primary-fg: var(--bz-bg);
+        --bz-r-xs: 6px;
+        --bz-r-sm: var(--dsw-radius-sm);
+        --bz-r-md: var(--dsw-radius-md);
+        --bz-r-lg: var(--dsw-radius-lg);
+        --bz-r-full: 999px;
+        --bz-font-sans:
+          'PingFang SC', 'Microsoft YaHei UI', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        --bz-font-mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, Consolas, monospace;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+        background-color: var(--bz-canvas);
+        background-image: var(--dsw-canvas-ambient);
+        color: var(--bz-fg);
+        font-family: var(--bz-font-sans);
+        font-size: 13px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font-family: inherit;
+        color: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--bz-accent);
+        outline-offset: 2px;
+      }
+
+      .bz-mono {
+        font-family: var(--bz-font-mono);
+        font-size: 12px;
+      }
+
+      /* =====================================================================
+         Prototype Control Header (仅原型评审切换：模拟 DSH 宿主设置，非插件内置配色页)
+         ===================================================================== */
+      .proto-bar {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 16px;
+        background: var(--bz-bg);
+        border-bottom: 1px solid var(--bz-border);
+      }
+
+      .proto-bar__brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .proto-bar__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: var(--bz-r-full);
+        background: var(--bz-accent-bg);
+        color: var(--bz-accent-fg);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .proto-bar__title {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--bz-fg);
+      }
+
+      .proto-bar__controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .proto-seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--bz-r-sm);
+        background: var(--bz-bg-alt);
+        border: 1px solid var(--bz-border);
+      }
+
+      .proto-seg__btn {
+        height: 25px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: var(--bz-r-xs);
+        background: transparent;
+        color: var(--bz-fg-dim);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .proto-seg__btn[data-active='true'] {
+        background: var(--bz-bg);
+        color: var(--bz-fg);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      }
+
+      .proto-state-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--bz-fg-dim);
+      }
+
+      /* =====================================================================
+         Common Badges & Buttons (深浅色对比度均自适应)
+         ===================================================================== */
+      .bz-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 20px;
+        padding: 0 7px;
+        border-radius: var(--bz-r-full);
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        border: 1px solid transparent;
+      }
+
+      .bz-tag[data-kind='ok'] {
+        background: var(--bz-ok-bg);
+        color: var(--bz-ok-fg);
+      }
+      .bz-tag[data-kind='warn'] {
+        background: var(--bz-warn-bg);
+        color: var(--bz-warn-fg);
+      }
+      .bz-tag[data-kind='error'],
+      .bz-tag[data-kind='danger'],
+      .bz-tag[data-kind='req'] {
+        background: var(--bz-err-bg);
+        color: var(--bz-err-fg);
+        border-color: var(--bz-err-line);
+      }
+      .bz-tag[data-kind='info'] {
+        background: var(--bz-accent-bg);
+        color: var(--bz-accent-fg);
+      }
+      .bz-tag[data-kind='muted'],
+      .bz-tag[data-kind='readonly'],
+      .bz-tag[data-kind='disabled'] {
+        background: var(--bz-bg-alt);
+        color: var(--bz-fg-secondary);
+        border-color: var(--bz-border);
+      }
+
+      .bz-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        height: 30px;
+        padding: 0 12px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+        color: var(--bz-fg);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background-color 0.12s ease,
+          border-color 0.12s ease;
+      }
+
+      .bz-btn:hover:not(:disabled) {
+        background: var(--bz-row-hover);
+      }
+
+      .bz-btn--sm {
+        height: 26px;
+        padding: 0 10px;
+        font-size: 12px;
+      }
+
+      .bz-btn--primary {
+        background: var(--bz-btn-primary-bg);
+        border-color: var(--bz-btn-primary-bg);
+        color: var(--bz-btn-primary-fg);
+      }
+
+      .bz-btn--primary:hover:not(:disabled) {
+        opacity: 0.9;
+        background: var(--bz-btn-primary-bg);
+      }
+
+      .bz-btn--accent {
+        background: var(--bz-accent-bg);
+        border-color: color-mix(in srgb, var(--bz-accent) 28%, transparent);
+        color: var(--bz-accent-fg);
+      }
+
+      .bz-btn--accent:hover:not(:disabled) {
+        background: var(--bz-accent-ring);
+      }
+
+      .bz-btn--danger {
+        background: var(--bz-err-bg);
+        border-color: var(--bz-err-line);
+        color: var(--bz-err-fg);
+      }
+
+      .bz-btn--ghost {
+        background: transparent;
+        border-color: transparent;
+        color: var(--bz-fg-secondary);
+      }
+
+      .bz-btn--ghost:hover:not(:disabled) {
+        background: var(--bz-row-hover);
+        color: var(--bz-fg);
+      }
+
+      .bz-btn:disabled {
+        opacity: 0.52;
+        cursor: not-allowed;
+      }
+
+      /* =====================================================================
+         Screen B: DSH Conversation Stage + Doubao-Style Composer & Popover
+         ===================================================================== */
+      .stage-conversation {
+        max-width: 1040px;
+        margin: 0 auto;
+        min-height: calc(100vh - 46px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 14px 20px 22px;
+      }
+
+      .host-hero {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 4px 0 10px;
+        gap: 6px;
+      }
+
+      .host-hero__avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 16px;
+        box-shadow: 0 6px 20px rgba(59, 130, 246, 0.24);
+      }
+
+      .host-hero__title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .host-hero__sub {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--bz-fg-dim);
+      }
+
+      .host-active-banner {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 4px;
+        padding: 4px 12px;
+        border-radius: var(--bz-r-full);
+        background: var(--bz-bg);
+        border: 1px solid var(--bz-border);
+        font-size: 12px;
+        color: var(--bz-fg-secondary);
+      }
+
+      .host-active-banner strong {
+        color: var(--bz-fg);
+        font-weight: 600;
+      }
+
+      .host-active-banner__clear {
+        border: 0;
+        background: transparent;
+        color: var(--bz-fg-dim);
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 12px;
+      }
+
+      .host-active-banner__clear:hover {
+        color: var(--bz-err-fg);
+      }
+
+      .composer-wrap {
+        position: relative;
+        width: 100%;
+        max-width: 880px;
+        margin: 0 auto;
+      }
+
+      .composer-shell {
+        position: relative;
+        background: var(--dsw-composer-glass);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1.5px solid var(--bz-border-strong);
+        border-radius: var(--bz-r-lg);
+        box-shadow: var(--dsw-shadow-card);
+        transition:
+          border-color 0.16s ease,
+          box-shadow 0.16s ease;
+        overflow: hidden;
+      }
+
+      .composer-shell[data-open='true'] {
+        border-color: var(--bz-accent);
+        box-shadow:
+          0 0 0 3px var(--bz-accent-ring),
+          var(--dsw-shadow-card);
+      }
+
+      .bz-popover {
+        display: flex;
+        flex-direction: column;
+        background: var(--bz-bg);
+        border-bottom: 1px solid var(--bz-border);
+        animation: bz-slide-up 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .bz-popover__filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--bz-border);
+        background: var(--bz-bg);
+      }
+
+      .bz-filter-cluster {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .bz-filter-label {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--bz-fg-dim);
+        margin-right: 2px;
+      }
+
+      .bz-source-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 9px;
+        border-radius: var(--bz-r-full);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+        color: var(--bz-fg-secondary);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.12s ease;
+      }
+
+      .bz-source-pill:hover {
+        background: var(--bz-row-hover);
+        color: var(--bz-fg);
+      }
+
+      .bz-source-pill[data-on='true'] {
+        background: var(--bz-accent-bg);
+        border-color: color-mix(in srgb, var(--bz-accent) 42%, var(--bz-bg));
+        color: var(--bz-accent-fg);
+        font-weight: 600;
+      }
+
+      .bz-source-pill[data-error='true'] {
+        border-color: var(--bz-err-line);
+        background: var(--bz-err-bg);
+        color: var(--bz-err-fg);
+      }
+
+      .bz-source-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.78;
+      }
+
+      .bz-cat-chip {
+        height: 22px;
+        padding: 0 8px;
+        border-radius: var(--bz-r-full);
+        border: 0;
+        background: transparent;
+        color: var(--bz-fg-dim);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .bz-cat-chip:hover {
+        background: var(--bz-row-hover);
+        color: var(--bz-fg);
+      }
+
+      .bz-cat-chip[data-on='true'] {
+        background: var(--bz-bg-alt);
+        color: var(--bz-fg);
+        font-weight: 600;
+      }
+
+      .bz-popover__list {
+        max-height: 296px;
+        overflow-y: auto;
+        padding: 8px 8px 6px;
+      }
+
+      .bz-popover__list::-webkit-scrollbar {
+        width: 5px;
+      }
+      .bz-popover__list::-webkit-scrollbar-thumb {
+        background: var(--bz-border-strong);
+        border-radius: 999px;
+      }
+
+      .bz-group-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 10px 4px;
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-doubao-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 7px 10px;
+        border-radius: var(--bz-r-sm);
+        cursor: pointer;
+        transition: background-color 0.1s ease;
+        border: 1px solid transparent;
+      }
+
+      .bz-doubao-row:hover {
+        background: var(--bz-row-hover);
+      }
+
+      .bz-doubao-row[data-selected='true'] {
+        background: var(--bz-row-active);
+      }
+
+      .bz-doubao-row[data-disabled='true'] {
+        opacity: 0.72;
+        cursor: not-allowed;
+      }
+
+      .bz-doubao-row__main {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .bz-doubao-row__icon {
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        background: var(--bz-bg-alt);
+        color: var(--bz-fg-secondary);
+      }
+
+      .bz-doubao-row__icon[data-tone='blue'] {
+        background: color-mix(in srgb, #3b82f6 15%, var(--bz-bg));
+        color: color-mix(in srgb, #3b82f6 76%, var(--bz-fg));
+      }
+      .bz-doubao-row__icon[data-tone='green'] {
+        background: color-mix(in srgb, #16a34a 15%, var(--bz-bg));
+        color: color-mix(in srgb, #16a34a 74%, var(--bz-fg));
+      }
+      .bz-doubao-row__icon[data-tone='amber'] {
+        background: color-mix(in srgb, #d97706 16%, var(--bz-bg));
+        color: color-mix(in srgb, #d97706 74%, var(--bz-fg));
+      }
+      .bz-doubao-row__icon[data-tone='purple'] {
+        background: color-mix(in srgb, #8b5cf6 16%, var(--bz-bg));
+        color: color-mix(in srgb, #8b5cf6 76%, var(--bz-fg));
+      }
+
+      .bz-doubao-row__text {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .bz-doubao-row__name {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--bz-fg);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .bz-doubao-row__desc {
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .bz-doubao-row__side {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+
+      .bz-view-all-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin: 4px 10px 6px 38px;
+        padding: 4px 6px;
+        border: 0;
+        background: transparent;
+        color: var(--bz-fg-dim);
+        font-size: 12px;
+        font-weight: 500;
+        border-radius: var(--bz-r-xs);
+        cursor: pointer;
+      }
+
+      .bz-view-all-link:hover {
+        background: var(--bz-row-hover);
+        color: var(--bz-accent-fg);
+      }
+
+      .bz-popover__searchbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-top: 1px solid var(--bz-border);
+        background: var(--bz-bg);
+      }
+
+      .bz-popover__searchicon {
+        color: var(--bz-fg-dim);
+        display: inline-flex;
+        flex-shrink: 0;
+      }
+
+      .bz-popover__searchinput {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        font-size: 13px;
+        color: var(--bz-fg);
+        outline: none;
+      }
+
+      .bz-popover__searchinput::placeholder {
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-popover__fullbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: var(--bz-r-full);
+        border: 1px solid var(--bz-border);
+        background: var(--bz-bg-alt);
+        color: var(--bz-fg-secondary);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .bz-popover__fullbtn:hover {
+        border-color: var(--bz-accent);
+        color: var(--bz-accent-fg);
+        background: var(--bz-accent-bg);
+      }
+
+      .bz-inline-alert {
+        margin: 4px 8px 8px;
+        padding: 9px 12px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid var(--bz-err-line);
+        background: var(--bz-err-bg);
+        color: var(--bz-fg);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+      }
+
+      .bz-empty-box {
+        padding: 24px 16px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .bz-empty-box__title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--bz-fg);
+      }
+
+      .bz-empty-box__desc {
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+        max-width: 420px;
+      }
+
+      .bz-skel-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+      }
+
+      .bz-skel-circle {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: var(--bz-bg-alt);
+      }
+
+      .bz-skel-bar {
+        height: 11px;
+        border-radius: 999px;
+        background: linear-gradient(
+          90deg,
+          var(--bz-bg-alt) 25%,
+          var(--bz-border) 50%,
+          var(--bz-bg-alt) 75%
+        );
+        background-size: 200% 100%;
+        animation: bz-shimmer 1.2s ease-in-out infinite;
+      }
+
+      .composer-input-area {
+        padding: 12px 16px 4px;
+      }
+
+      .composer-shell[data-open='true'] .composer-input-area {
+        display: none;
+      }
+
+      .composer-textarea {
+        width: 100%;
+        min-height: 44px;
+        border: 0;
+        background: transparent;
+        resize: none;
+        outline: none;
+        font-size: 13.5px;
+        line-height: 1.5;
+        color: var(--bz-fg);
+      }
+
+      .composer-textarea::placeholder {
+        color: var(--bz-fg-dim);
+      }
+
+      .composer-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 12px 10px;
+        flex-wrap: wrap;
+      }
+
+      .composer-toolbar__left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+
+      .composer-toolbar__right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+
+      .host-tool-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 9px;
+        border-radius: var(--bz-r-full);
+        border: 0;
+        background: transparent;
+        color: var(--bz-fg-secondary);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: default;
+        white-space: nowrap;
+      }
+
+      .host-tool-btn--circle {
+        width: 28px;
+        padding: 0;
+        justify-content: center;
+        background: var(--bz-bg-alt);
+      }
+
+      .host-divider {
+        width: 1px;
+        height: 16px;
+        background: var(--bz-border-strong);
+        margin: 0 2px;
+      }
+
+      .bz-pills-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        flex-wrap: nowrap;
+      }
+
+      .bz-pill-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: var(--bz-r-full);
+        border: 1px solid transparent;
+        background: var(--bz-bg-alt);
+        color: var(--bz-fg-secondary);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.14s ease;
+      }
+
+      .bz-pill-btn:hover {
+        background: var(--bz-row-hover);
+        color: var(--bz-fg);
+        border-color: var(--bz-border-strong);
+      }
+
+      .bz-pill-btn[data-active='true'],
+      .bz-pill-btn[data-has-selection='true'] {
+        background: var(--bz-accent-bg);
+        color: var(--bz-accent-fg);
+        border-color: color-mix(in srgb, var(--bz-accent) 34%, var(--bz-bg));
+        font-weight: 600;
+      }
+
+      .bz-pill-btn[data-active='true'] {
+        border-color: var(--bz-accent);
+      }
+
+      .bz-pill-btn__sub {
+        max-width: 84px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+        opacity: 0.92;
+      }
+
+      .bz-pill-btn__chev {
+        opacity: 0.65;
+        display: inline-flex;
+        transition: transform 0.14s ease;
+      }
+
+      .bz-pill-btn[data-active='true'] .bz-pill-btn__chev {
+        transform: rotate(90deg);
+        opacity: 1;
+      }
+
+      .host-send-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 0;
+        background: var(--bz-btn-primary-bg);
+        color: var(--bz-btn-primary-fg);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .host-meta-chip {
+        font-size: 11.5px;
+        color: var(--bz-fg-dim);
+        white-space: nowrap;
+      }
+
+      /* =====================================================================
+         Full Workbench Modal (完整面板)
+         ===================================================================== */
+      .bz-modal-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: var(--bz-scrim);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        animation: bz-fade 0.14s ease-out;
+      }
+
+      .bz-modal {
+        width: min(960px, 100%);
+        max-height: min(84vh, 760px);
+        display: flex;
+        flex-direction: column;
+        background: var(--bz-bg);
+        border: 1px solid var(--bz-border-strong);
+        border-radius: var(--bz-r-lg);
+        box-shadow: var(--dsw-shadow-modal);
+        overflow: hidden;
+        animation: bz-slide-up 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .bz-modal__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--bz-border);
+      }
+
+      .bz-modal__title-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .bz-modal__title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .bz-modal__sub {
+        margin: 0;
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-modal__head-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .bz-icon-close {
+        width: 28px;
+        height: 28px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid var(--bz-border);
+        background: var(--bz-bg);
+        color: var(--bz-fg-dim);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .bz-icon-close:hover {
+        background: var(--bz-row-hover);
+        color: var(--bz-fg);
+      }
+
+      .bz-modal__nav {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--bz-border);
+        background: var(--bz-bg-alt);
+      }
+
+      .bz-domain-tabs {
+        display: inline-flex;
+        gap: 4px;
+        padding: 3px;
+        border-radius: var(--bz-r-sm);
+        background: var(--bz-bg);
+        border: 1px solid var(--bz-border);
+      }
+
+      .bz-domain-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: var(--bz-r-xs);
+        background: transparent;
+        color: var(--bz-fg-dim);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      .bz-domain-tab[data-on='true'] {
+        background: var(--bz-accent-bg);
+        color: var(--bz-accent-fg);
+        font-weight: 600;
+      }
+
+      .bz-provider-switches {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .bz-switch-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: var(--bz-r-full);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .bz-switch-track {
+        width: 26px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--bz-bg-alt);
+        border: 1px solid var(--bz-border-strong);
+        position: relative;
+        transition: background-color 0.14s ease;
+      }
+
+      .bz-switch-track::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--bz-fg-dim);
+        transition:
+          transform 0.14s ease,
+          background-color 0.14s ease;
+      }
+
+      .bz-switch-pill[data-on='true'] .bz-switch-track {
+        background: var(--bz-ok-bg);
+        border-color: var(--bz-ok-line);
+      }
+
+      .bz-switch-pill[data-on='true'] .bz-switch-track::after {
+        transform: translateX(11px);
+        background: var(--bz-ok-fg);
+      }
+
+      .bz-modal__toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--bz-border);
+      }
+
+      .bz-search-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1 1 240px;
+        max-width: 340px;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+      }
+
+      .bz-search-box input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        outline: none;
+        font-size: 12.5px;
+      }
+
+      .bz-modal__body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 18px;
+      }
+
+      .bz-lib-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 14px;
+      }
+
+      .bz-lib-card {
+        border: 1px solid var(--bz-border-strong);
+        border-radius: var(--bz-r-md);
+        background: var(--bz-bg);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .bz-lib-card[data-muted='true'] {
+        background: var(--bz-bg-alt);
+      }
+
+      .bz-lib-card[data-error='true'] {
+        border-color: var(--bz-err-line);
+      }
+
+      .bz-lib-card__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--bz-border);
+        background: var(--bz-bg-alt);
+      }
+
+      .bz-lib-card__name {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .bz-lib-card__body {
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .bz-workbench-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 10px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid transparent;
+      }
+
+      .bz-workbench-item__main {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .bz-workbench-item__side {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+      }
+
+      .bz-workbench-item:hover {
+        background: var(--bz-row-hover);
+      }
+
+      .bz-workbench-item[data-selected='true'] {
+        background: var(--bz-row-active);
+        border-color: color-mix(in srgb, var(--bz-accent) 30%, transparent);
+      }
+
+      .bz-workbench-item__title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .bz-workbench-item__desc {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-subhead {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 6px 4px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-conflict-details {
+        margin-top: 5px;
+        font-size: 11.5px;
+        color: var(--bz-fg-dim);
+      }
+
+      .bz-conflict-details summary {
+        cursor: pointer;
+        color: var(--bz-err-fg);
+        font-weight: 500;
+      }
+
+      .bz-conflict-details p {
+        margin: 4px 0 0;
+        padding: 6px 8px;
+        border-radius: var(--bz-r-xs);
+        background: var(--bz-bg-alt);
+      }
+
+      .bz-modal__foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 18px;
+        border-top: 1px solid var(--bz-border);
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+      }
+
+      /* =====================================================================
+         Screen A: Settings Page (Provider 栏 + 全局启用禁用 + 跟随 DSH 配色)
+         ===================================================================== */
+      .stage-settings {
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 0 20px 40px;
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 20px;
+        align-items: start;
+      }
+
+      .settings-nav {
+        background: var(--bz-bg);
+        border: 1px solid var(--bz-border);
+        border-radius: var(--bz-r-md);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .settings-nav__item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: var(--bz-r-sm);
+        font-size: 13px;
+        color: var(--bz-fg-dim);
+      }
+
+      .settings-nav__item[data-active='true'] {
+        background: var(--bz-accent-bg);
+        color: var(--bz-accent-fg);
+        font-weight: 600;
+      }
+
+      .settings-main {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .settings-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .settings-header h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      /* Provider 栏：标签明确标为 Provider，一个个 tab 切换不同 Provider */
+      .settings-provider-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .settings-provider-bar__label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--bz-fg-dim);
+      }
+
+      .settings-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        overflow-x: auto;
+      }
+
+      .settings-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 32px;
+        padding: 0 14px;
+        border-radius: var(--bz-r-full);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+        color: var(--bz-fg-secondary);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      .settings-tab[data-on='true'] {
+        background: var(--bz-accent-bg);
+        border-color: var(--bz-accent);
+        color: var(--bz-accent-fg);
+        font-weight: 600;
+      }
+
+      .settings-tab[data-disabled='true'] {
+        opacity: 0.78;
+      }
+
+      .settings-tab[data-error='true'] {
+        border-color: var(--bz-err-line);
+        color: var(--bz-err-fg);
+      }
+
+      /* 当前 Provider 状态与全局启用/禁用控制卡 */
+      .settings-provider-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: var(--bz-r-md);
+        border: 1px solid var(--bz-border);
+        background: var(--bz-bg);
+      }
+
+      .settings-provider-banner[data-enabled='false'] {
+        background: var(--bz-bg-alt);
+      }
+
+      .settings-provider-banner__meta {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .settings-provider-banner__title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .settings-provider-banner__desc {
+        margin: 0;
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+      }
+
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .settings-grid[data-muted='true'] .settings-card {
+        opacity: 0.78;
+      }
+
+      .settings-card {
+        background: var(--bz-bg);
+        border: 1px solid var(--bz-border);
+        border-radius: var(--bz-r-md);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .settings-card__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .settings-card__title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .settings-field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .settings-field__label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--bz-fg-secondary);
+      }
+
+      .settings-field__row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .settings-field__hint {
+        margin: 0;
+        font-size: 12px;
+        color: var(--bz-fg-dim);
+      }
+
+      .settings-field__hint--error {
+        color: var(--bz-err-fg);
+      }
+
+      .bz-select {
+        height: 32px;
+        padding: 0 10px;
+        border-radius: var(--bz-r-sm);
+        border: 1px solid var(--bz-border-strong);
+        background: var(--bz-bg);
+        font-size: 12.5px;
+        min-width: 240px;
+      }
+
+      .bz-select[aria-invalid='true'] {
+        border-color: var(--bz-err);
+      }
+
+      .settings-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .settings-list li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 0;
+        border-top: 1px solid var(--bz-border);
+      }
+
+      .settings-list li:first-child {
+        border-top: 0;
+        padding-top: 2px;
+      }
+
+      .bz-toast-floating {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 80;
+        padding: 9px 14px;
+        border-radius: var(--bz-r-sm);
+        background: var(--bz-fg);
+        color: var(--bz-bg);
+        font-size: 12.5px;
+        font-weight: 500;
+        box-shadow: var(--dsw-shadow-card);
+        animation: bz-slide-up 0.16s ease-out;
+      }
+
+      .bz-toast-floating[data-kind='error'] {
+        background: var(--bz-err-fg);
+        color: #ffffff;
+      }
+
+      @keyframes bz-fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes bz-slide-up {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes bz-shimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .stage-settings {
+          grid-template-columns: 1fr;
+        }
+        .settings-grid {
+          grid-template-columns: 1fr;
+        }
+        .bz-lib-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body data-ds-dark-theme="false">
+    <header class="proto-bar" aria-label="原型评审控制条">
+      <div class="proto-bar__brand">
+        <span class="proto-bar__badge">dsh-bazaar UI 原型 v2.1</span>
+        <span class="proto-bar__title">Provider 栏 · 设置页启停联动 · 跟随 DSH 配色</span>
+      </div>
+      <div class="proto-bar__controls">
+        <div class="proto-seg" role="group" aria-label="视图切换">
+          <button
+            type="button"
+            class="proto-seg__btn"
+            data-screen="conversation"
+            data-active="true"
+          >
+            会话面板（屏 B）
+          </button>
+          <button type="button" class="proto-seg__btn" data-screen="settings" data-active="false">
+            设置页（屏 A）
+          </button>
+        </div>
+        <span class="proto-state-label">模拟 DSH 宿主主题</span>
+        <div class="proto-seg" role="group" aria-label="模拟宿主主题">
+          <button type="button" class="proto-seg__btn" data-theme-btn="light" data-active="true">
+            浅色（默认）
+          </button>
+          <button type="button" class="proto-seg__btn" data-theme-btn="dark" data-active="false">
+            深色
+          </button>
+        </div>
+        <span class="proto-state-label">状态预览</span>
+        <div class="proto-seg" role="group" aria-label="状态预览器">
+          <button type="button" class="proto-seg__btn" data-mode="normal" data-active="true">
+            正常
+          </button>
+          <button type="button" class="proto-seg__btn" data-mode="loading" data-active="false">
+            加载中
+          </button>
+          <button type="button" class="proto-seg__btn" data-mode="empty" data-active="false">
+            空数据
+          </button>
+          <button
+            type="button"
+            class="proto-seg__btn"
+            data-mode="partial-error"
+            data-active="false"
+          >
+            单库报错
+          </button>
+          <button type="button" class="proto-seg__btn" data-mode="conflict" data-active="false">
+            跨库冲突
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="app"></main>
+    <div id="modal-root"></div>
+    <div id="toast-root"></div>
+
+    <script>
+      ;(function () {
+        const ICONS = {
+          expert:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 7.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Zm-4.75 6a4.75 4.75 0 0 1 9.5 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+          skill:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.75 13 4.5v7L8 14.25 3 11.5v-7L8 1.75Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 5.25 10.5 6.7v2.6L8 10.75 5.5 9.3V6.7L8 5.25Z" stroke="currentColor" stroke-width="1.3"/></svg>',
+          connector:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 2.5v3M10 2.5v3M4 5.5h8v2.75A3.75 3.75 0 0 1 8.25 12h-.5A3.75 3.75 0 0 1 4 8.25V5.5ZM8 12v2.25" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          chevron:
+            '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          search:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+          grid: '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.2" y="2.2" width="4.8" height="4.8" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="2.2" width="4.8" height="4.8" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="2.2" y="9" width="4.8" height="4.8" rx="1.2" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="9" width="4.8" height="4.8" rx="1.2" stroke="currentColor" stroke-width="1.4"/></svg>',
+          close:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+          shield:
+            '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8 13 3.6v4.2c0 3-2.1 5.2-5 6.4-2.9-1.2-5-3.4-5-6.4V3.6L8 1.8Z" stroke="currentColor" stroke-width="1.35"/></svg>',
+          desktop:
+            '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="8.5" rx="1.5" stroke="currentColor" stroke-width="1.35"/><path d="M5.5 13.5h5M8 11v2.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
+          plus: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+          send: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3.2M4 7l4-4 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          memory:
+            '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.35"/><path d="M8 5v3l2.2 1.4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
+        }
+
+        const params = new URLSearchParams(window.location.search)
+        const state = {
+          screen: params.get('screen') === 'settings' ? 'settings' : 'conversation',
+          theme: params.get('theme') === 'dark' ? 'dark' : 'light',
+          previewMode: ['normal', 'loading', 'empty', 'partial-error', 'conflict'].includes(
+            params.get('mode'),
+          )
+            ? params.get('mode')
+            : 'normal',
+          activeKind:
+            params.get('kind') === 'none'
+              ? null
+              : ['expert', 'skill', 'connector'].includes(params.get('kind'))
+                ? params.get('kind')
+                : params.get('modal') === '1'
+                  ? null
+                  : 'expert',
+          modalOpen: params.get('modal') === '1',
+          modalTab: ['expert', 'skill', 'connector'].includes(params.get('tab'))
+            ? params.get('tab')
+            : 'expert',
+          searchQuery: '',
+          modalSearchQuery: '',
+          category: 'all',
+          // 设置页控制的 Provider 全局启用/禁用状态（禁用后在会话面板完全隐藏）
+          providerEnabled: {
+            workbuddy: params.get('disable') !== 'workbuddy',
+            demo: params.get('disable') !== 'demo',
+          },
+          // 会话面板内的轻过滤（仅作用于设置页已启用的 Provider）
+          activeProviders: ['workbuddy', 'demo'],
+          selectedExpert: { providerId: 'workbuddy', id: 'ex-data-eng', name: '数据工程师' },
+          installedSkills: {
+            'workbuddy:pdf-reader': true,
+            'workbuddy:pptx-craft': true,
+            'workbuddy:memory-recall': true,
+          },
+          disabledConnectors: { 'conn-jira': true },
+          connectorAuthed: { 'conn-feishu': true, 'conn-github': true, 'conn-jira': false },
+          settingsProvider: params.get('provider') === 'demo' ? 'demo' : 'workbuddy',
+          loginPhase: 'logged',
+          loginRegion: '',
+          regionError: false,
+          updateConfirm: false,
+          confirmModal: null,
+          toast: null,
+        }
+
+        const PROVIDERS = [
+          {
+            id: 'workbuddy',
+            displayName: 'WorkBuddy',
+            shortName: 'WorkBuddy',
+            description: '内置官方 Provider，提供专家、技能、记忆检索与连接器市场。',
+            capabilities: {
+              expertMarket: true,
+              skillMarket: true,
+              memoryMarket: true,
+              connectorMarket: true,
+              account: true,
+            },
+            credential: {
+              name: 'BAZAAR_WORKBUDDY_TOKEN',
+              configured: true,
+              mode: 'bearer',
+              source: 'credentials',
+              masked: '••••9f3c',
+            },
+            cache: { dir: '~/.dsh/bazaar/providers/workbuddy/cache', entries: 18, bytes: 2516582 },
+          },
+          {
+            id: 'demo',
+            displayName: 'Demo Provider',
+            shortName: 'Demo',
+            description: '扩展注册 Provider 示例，用于演示多来源并发、同名冲突与局部容错。',
+            capabilities: {
+              expertMarket: true,
+              skillMarket: true,
+              memoryMarket: false,
+              connectorMarket: true,
+              account: true,
+            },
+            credential: {
+              name: 'BAZAAR_DEMO_TOKEN',
+              configured: false,
+              mode: 'header',
+              source: 'none',
+              masked: '',
+            },
+            cache: { dir: '~/.dsh/bazaar/providers/demo/cache', entries: 0, bytes: 0 },
+          },
+        ]
+
+        const EXPERTS = [
+          {
+            id: 'ex-data-eng',
+            providerId: 'workbuddy',
+            name: '数据工程师',
+            desc: '擅长 SQL 建模、指标口径拆解与数仓脚本调优',
+            category: 'data',
+            tone: 'blue',
+            recent: true,
+          },
+          {
+            id: 'ex-frontend-arch',
+            providerId: 'workbuddy',
+            name: '前端架构师',
+            desc: '帮你设计组件层次、CSS 令牌系统与无障碍规范',
+            category: 'eng',
+            tone: 'purple',
+            recent: true,
+          },
+          {
+            id: 'ex-prd-writer',
+            providerId: 'workbuddy',
+            name: '云文档专家',
+            desc: '帮你撰写、编辑、排版和优化需求文档与复盘报告',
+            category: 'doc',
+            tone: 'green',
+            recent: true,
+          },
+          {
+            id: 'ex-ppt-craft',
+            providerId: 'workbuddy',
+            name: '汇报演示专家',
+            desc: '帮你生成、结构化提炼和美化业务汇报 PPT',
+            category: 'doc',
+            tone: 'amber',
+            recent: false,
+          },
+          {
+            id: 'ex-sec-audit',
+            providerId: 'workbuddy',
+            name: '安全审查官',
+            desc: '静态排查权限越界、注入点与依赖漏洞',
+            category: 'eng',
+            tone: 'blue',
+            recent: false,
+          },
+          {
+            id: 'ex-data-demo',
+            providerId: 'demo',
+            name: '数据工程师',
+            desc: '面向多源 ETL 编排与轻量指标看板生成',
+            category: 'data',
+            tone: 'green',
+            recent: false,
+          },
+          {
+            id: 'ex-code-review',
+            providerId: 'demo',
+            name: 'PR 代码审查官',
+            desc: '逐行梳理变更影响面、测试缺口与回归风险',
+            category: 'eng',
+            tone: 'purple',
+            recent: false,
+          },
+        ]
+
+        const SKILLS = [
+          {
+            id: 'pdf-reader',
+            providerId: 'workbuddy',
+            name: 'PDF 深度解析',
+            slug: 'pdf-reader',
+            desc: '将长篇 PDF、表格与扫描件转为可检索结构化文本',
+            source: 'skillMarket',
+            category: 'doc',
+            tone: 'blue',
+            recent: true,
+          },
+          {
+            id: 'pptx-craft',
+            providerId: 'workbuddy',
+            name: 'PPT 排版生成',
+            slug: 'pptx-craft',
+            desc: '帮你生成、编辑和美化商业演示文稿幻灯片',
+            source: 'skillMarket',
+            category: 'doc',
+            tone: 'amber',
+            recent: true,
+          },
+          {
+            id: 'memory-recall',
+            providerId: 'workbuddy',
+            name: '跨会话记忆检索',
+            slug: 'memory-recall',
+            desc: '自动召回历史项目决策与用户偏好上下文',
+            source: 'memoryMarket',
+            category: 'memory',
+            tone: 'purple',
+            recent: true,
+          },
+          {
+            id: 'sql-linter',
+            providerId: 'workbuddy',
+            name: 'SQL 血缘诊断',
+            slug: 'sql-linter',
+            desc: '识别慢查询、全表扫描与字段口径不一致问题',
+            source: 'skillMarket',
+            category: 'data',
+            tone: 'green',
+            recent: false,
+          },
+          {
+            id: 'pdf-reader-conflict',
+            providerId: 'demo',
+            name: 'PDF 极速提取',
+            slug: 'pdf-reader',
+            desc: 'Demo 同名技能：演示跨来源安装冲突检测与禁止覆盖',
+            source: 'skillMarket',
+            category: 'doc',
+            tone: 'amber',
+            recent: false,
+            conflictOwner: 'WorkBuddy',
+          },
+          {
+            id: 'api-contract-check',
+            providerId: 'demo',
+            name: '接口契约校验',
+            slug: 'api-contract-check',
+            desc: '比对 OpenAPI Schema 与前端请求体字段差异',
+            source: 'skillMarket',
+            category: 'eng',
+            tone: 'blue',
+            recent: false,
+          },
+        ]
+
+        const CONNECTORS = [
+          {
+            id: 'conn-feishu',
+            providerId: 'workbuddy',
+            name: '飞书云文档',
+            desc: '读写团队知识库、评论纪要与任务表格（12 个工具）',
+            transport: 'http',
+            tools: 12,
+            category: 'local',
+            tone: 'blue',
+            recent: true,
+          },
+          {
+            id: 'conn-github',
+            providerId: 'workbuddy',
+            name: 'GitHub 仓库',
+            desc: '检索 PR、Issue 与代码提交历史（9 个工具）',
+            transport: 'http',
+            tools: 9,
+            category: 'local',
+            tone: 'purple',
+            recent: true,
+          },
+          {
+            id: 'conn-jira',
+            providerId: 'demo',
+            name: 'Jira 项目追踪',
+            desc: '读取迭代排期、缺陷状态与流转记录（6 个工具）',
+            transport: 'sse',
+            tools: 6,
+            category: 'local',
+            tone: 'amber',
+            recent: false,
+          },
+          {
+            id: 'conn-notion',
+            providerId: 'workbuddy',
+            name: 'Notion 工作区',
+            desc: '连接器市场目录：同步页面、数据库与知识索引',
+            transport: 'http',
+            tools: 8,
+            category: 'catalog',
+            tone: 'green',
+            recent: false,
+            catalogOnly: true,
+          },
+        ]
+
+        const CATEGORIES = {
+          expert: [
+            { id: 'all', label: '全部' },
+            { id: 'data', label: '数据' },
+            { id: 'eng', label: '工程' },
+            { id: 'doc', label: '文档' },
+          ],
+          skill: [
+            { id: 'all', label: '全部' },
+            { id: 'skillMarket', label: '技能市场' },
+            { id: 'memoryMarket', label: '记忆能力' },
+            { id: 'installed', label: '已安装' },
+          ],
+          connector: [
+            { id: 'all', label: '全部' },
+            { id: 'local', label: '本机连接器' },
+            { id: 'authed', label: '已连接' },
+            { id: 'catalog', label: '市场目录' },
+          ],
+        }
+
+        function esc(value) {
+          return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+        }
+
+        function providerName(id) {
+          const found = PROVIDERS.find((p) => p.id === id)
+          return found ? found.shortName : id
+        }
+
+        /** 仅返回设置页中处于「启用」状态的 Provider；在设置页禁用的 Provider 不在会话面板显示。 */
+        function enabledProvidersInSettings() {
+          return PROVIDERS.filter((p) => state.providerEnabled[p.id] === true)
+        }
+
+        function sessionActiveProviderIds() {
+          return enabledProvidersInSettings()
+            .filter((p) => state.activeProviders.includes(p.id))
+            .map((p) => p.id)
+        }
+
+        function showToast(text, kind = 'ok') {
+          state.toast = { text, kind }
+          renderToast()
+          clearTimeout(showToast._timer)
+          showToast._timer = setTimeout(() => {
+            state.toast = null
+            renderToast()
+          }, 2800)
+        }
+
+        function hasSameNameAcrossVisible(name, items, visibleIds) {
+          const matchingProviders = new Set(
+            items
+              .filter((x) => x.name === name && visibleIds.includes(x.providerId))
+              .map((x) => x.providerId),
+          )
+          return matchingProviders.size > 1
+        }
+
+        function isSkillInstalled(item) {
+          return Boolean(state.installedSkills[item.providerId + ':' + item.slug])
+        }
+
+        function filterItems(kind, queryText, categoryId, respectSessionActive = true) {
+          const q = queryText.trim().toLowerCase()
+          const allowedInSettings = enabledProvidersInSettings().map((p) => p.id)
+          const activeIds = sessionActiveProviderIds()
+          let source = kind === 'expert' ? EXPERTS : kind === 'skill' ? SKILLS : CONNECTORS
+
+          return source.filter((item) => {
+            if (!allowedInSettings.includes(item.providerId)) return false
+            if (respectSessionActive && !activeIds.includes(item.providerId)) return false
+            if (state.previewMode === 'partial-error' && item.providerId === 'demo') return false
+            if (categoryId !== 'all') {
+              if (kind === 'expert' && item.category !== categoryId) return false
+              if (kind === 'skill') {
+                if (categoryId === 'installed' && !isSkillInstalled(item)) return false
+                if (
+                  (categoryId === 'skillMarket' || categoryId === 'memoryMarket') &&
+                  item.source !== categoryId
+                ) {
+                  return false
+                }
+              }
+              if (kind === 'connector') {
+                if (categoryId === 'local' && item.catalogOnly) return false
+                if (categoryId === 'catalog' && !item.catalogOnly) return false
+                if (categoryId === 'authed' && !state.connectorAuthed[item.id]) return false
+              }
+            }
+            if (q !== '') {
+              const hay = (
+                item.name +
+                ' ' +
+                item.desc +
+                ' ' +
+                (item.slug || '') +
+                ' ' +
+                providerName(item.providerId)
+              ).toLowerCase()
+              if (!hay.includes(q)) return false
+            }
+            return true
+          })
+        }
+
+        function renderPopoverRow(kind, item, showLibBadge) {
+          const iconSvg =
+            kind === 'expert'
+              ? ICONS.expert
+              : kind === 'skill'
+                ? item.source === 'memoryMarket'
+                  ? ICONS.memory
+                  : ICONS.skill
+                : ICONS.connector
+
+          let selected = false
+          let disabled = false
+          let sideHtml = ''
+
+          if (kind === 'expert') {
+            selected =
+              state.selectedExpert &&
+              state.selectedExpert.id === item.id &&
+              state.selectedExpert.providerId === item.providerId
+            sideHtml = selected
+              ? `<span class="bz-tag" data-kind="info">当前使用</span>
+                 <button type="button" class="bz-btn bz-btn--sm bz-btn--ghost" data-action="clear-expert">取消</button>`
+              : `<button type="button" class="bz-btn bz-btn--sm" data-action="pick-expert" data-id="${esc(item.id)}" data-provider="${esc(item.providerId)}">选择</button>`
+          } else if (kind === 'skill') {
+            const conflict =
+              state.previewMode === 'conflict' && item.conflictOwner
+                ? item.conflictOwner
+                : item.conflictOwner && state.installedSkills['workbuddy:' + item.slug]
+                  ? item.conflictOwner
+                  : null
+            const installed = isSkillInstalled(item)
+            if (conflict) {
+              disabled = true
+              sideHtml = `<span class="bz-tag" data-kind="danger" title="已被 ${esc(conflict)} 安装">冲突 · ${esc(conflict)}</span>`
+            } else if (installed) {
+              sideHtml = `<span class="bz-tag" data-kind="ok">已安装</span>
+                          <button type="button" class="bz-btn bz-btn--sm bz-btn--ghost" data-action="install-skill" data-id="${esc(item.id)}" data-provider="${esc(item.providerId)}" data-slug="${esc(item.slug)}">重装</button>`
+            } else {
+              sideHtml = `<button type="button" class="bz-btn bz-btn--sm bz-btn--accent" data-action="install-skill" data-id="${esc(item.id)}" data-provider="${esc(item.providerId)}" data-slug="${esc(item.slug)}">安装</button>`
+            }
+          } else {
+            const authed = Boolean(state.connectorAuthed[item.id])
+            const sessionOn = !state.disabledConnectors[item.id]
+            if (item.catalogOnly) {
+              sideHtml = `<span class="bz-tag" data-kind="muted">市场目录</span>
+                          <button type="button" class="bz-btn bz-btn--sm" data-action="open-modal-connector">管理</button>`
+            } else if (!authed) {
+              sideHtml = `<span class="bz-tag" data-kind="warn">需授权</span>
+                          <button type="button" class="bz-btn bz-btn--sm bz-btn--accent" data-action="auth-connector" data-id="${esc(item.id)}">授权</button>`
+            } else {
+              selected = sessionOn
+              sideHtml = `<span class="bz-tag" data-kind="${sessionOn ? 'ok' : 'muted'}">${sessionOn ? '已连接' : '本会话停用'}</span>
+                          <button type="button" class="bz-btn bz-btn--sm" data-action="toggle-connector" data-id="${esc(item.id)}">${sessionOn ? '停用' : '启用'}</button>`
+            }
+          }
+
+          const libBadge = showLibBadge
+            ? `<span class="bz-tag" data-kind="muted">${esc(providerName(item.providerId))}</span>`
+            : ''
+          const memoryBadge =
+            kind === 'skill' && item.source === 'memoryMarket'
+              ? `<span class="bz-tag" data-kind="info">记忆</span>`
+              : ''
+
+          return `
+            <div class="bz-doubao-row" data-selected="${selected}" data-disabled="${disabled}" data-row-kind="${kind}" data-id="${esc(item.id)}" data-provider="${esc(item.providerId)}">
+              <div class="bz-doubao-row__main">
+                <span class="bz-doubao-row__icon" data-tone="${esc(item.tone || 'blue')}">${iconSvg}</span>
+                <div class="bz-doubao-row__text">
+                  <span class="bz-doubao-row__name">${esc(item.name)}</span>
+                  <span class="bz-doubao-row__desc">${esc(item.desc)}</span>
+                </div>
+              </div>
+              <div class="bz-doubao-row__side">
+                ${memoryBadge}
+                ${libBadge}
+                ${sideHtml}
+              </div>
+            </div>
+          `
+        }
+
+        function renderPopover() {
+          if (!state.activeKind) return ''
+          const kind = state.activeKind
+          const cats = CATEGORIES[kind]
+          const visibleProviders = enabledProvidersInSettings()
+          const activeIds = sessionActiveProviderIds()
+
+          const sourcePills =
+            visibleProviders.length === 0
+              ? `<span class="bz-tag" data-kind="muted">无已启用来源</span>`
+              : visibleProviders
+                  .map((p) => {
+                    const on = activeIds.includes(p.id)
+                    const isErr = state.previewMode === 'partial-error' && p.id === 'demo'
+                    return `
+                      <button type="button" class="bz-source-pill" data-on="${on}" data-error="${isErr}" data-action="toggle-provider" data-provider="${p.id}" aria-pressed="${on}">
+                        <span class="bz-source-dot" aria-hidden="true"></span>
+                        <span>${esc(p.shortName)}</span>
+                        ${isErr ? '<span>出错</span>' : on ? '<span>已选</span>' : '<span>未选</span>'}
+                      </button>
+                    `
+                  })
+                  .join('')
+
+          const catChips = cats
+            .map(
+              (c) => `
+              <button type="button" class="bz-cat-chip" data-on="${state.category === c.id}" data-action="set-category" data-category="${c.id}">
+                ${esc(c.label)}
+              </button>
+            `,
+            )
+            .join('')
+
+          let bodyHtml = ''
+
+          if (visibleProviders.length === 0) {
+            bodyHtml = `
+              <div class="bz-empty-box" role="status">
+                <div class="bz-empty-box__title">暂无已启用的 Provider</div>
+                <div class="bz-empty-box__desc">全部 Provider 已在设置页禁用，因此会话面板已隐藏其内容；请前往设置页启用至少一个 Provider。</div>
+                <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="goto-settings">前往设置页</button>
+              </div>
+            `
+          } else if (state.previewMode === 'loading') {
+            bodyHtml = [0, 1, 2, 3]
+              .map(
+                (i) => `
+                <div class="bz-skel-row" aria-busy="true">
+                  <div class="bz-skel-circle"></div>
+                  <div class="bz-skel-bar" style="width:${i % 2 === 0 ? '26%' : '20%'}"></div>
+                  <div class="bz-skel-bar" style="width:${i % 2 === 0 ? '54%' : '46%'}"></div>
+                </div>
+              `,
+              )
+              .join('')
+          } else if (state.previewMode === 'empty' || activeIds.length === 0) {
+            const noActive = activeIds.length === 0
+            bodyHtml = `
+              <div class="bz-empty-box" role="status">
+                <div class="bz-empty-box__title">${noActive ? '尚未选择会话来源' : '当前筛选下没有匹配条目'}</div>
+                <div class="bz-empty-box__desc">${noActive ? '勾选上方任意来源即可展示对应能力，只影响当前会话。' : '尝试清空关键词或切换分类；不会影响其他已选来源。'}</div>
+                <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="${noActive ? 'enable-default-provider' : 'reset-filters'}">
+                  ${noActive ? '启用 ' + esc(visibleProviders[0].shortName) : '清除筛选'}
+                </button>
+              </div>
+            `
+          } else {
+            const errorBanner =
+              state.previewMode === 'partial-error' && visibleProviders.some((p) => p.id === 'demo')
+                ? `
+                  <div class="bz-inline-alert" role="alert">
+                    <span><strong>Demo</strong> 上游请求失败（500）：仅该来源分区受影响，其他来源列表正常可用。</span>
+                    <button type="button" class="bz-btn bz-btn--sm" data-action="recover-error">重试</button>
+                  </div>
+                `
+                : ''
+
+            const filtered = filterItems(kind, state.searchQuery, state.category, true)
+            if (filtered.length === 0) {
+              bodyHtml =
+                errorBanner +
+                `
+                <div class="bz-empty-box" role="status">
+                  <div class="bz-empty-box__title">未找到匹配的${kind === 'expert' ? '专家' : kind === 'skill' ? '技能' : '连接器'}</div>
+                  <div class="bz-empty-box__desc">暂无与「${esc(state.searchQuery || state.category)}」匹配的条目。</div>
+                  <button type="button" class="bz-btn bz-btn--sm" data-action="reset-filters">查看全部</button>
+                </div>
+              `
+            } else {
+              const showLibBadge = activeIds.length > 1
+              const recentItems =
+                state.searchQuery.trim() === '' ? filtered.filter((x) => x.recent) : []
+              const restItems =
+                state.searchQuery.trim() === '' ? filtered.filter((x) => !x.recent) : filtered
+
+              const recentTitle =
+                kind === 'expert' ? '常用专家' : kind === 'skill' ? '常用技能' : '常用连接器'
+              const restTitle =
+                state.searchQuery.trim() !== ''
+                  ? `匹配结果 (${restItems.length})`
+                  : kind === 'expert'
+                    ? `推荐专家 (${restItems.length})`
+                    : kind === 'skill'
+                      ? `市场与记忆 (${restItems.length})`
+                      : `更多连接器 (${restItems.length})`
+
+              const recentSection =
+                recentItems.length > 0
+                  ? `<div class="bz-group-title"><span>${recentTitle} (${recentItems.length})</span></div>
+                     ${recentItems.map((it) => renderPopoverRow(kind, it, showLibBadge || hasSameNameAcrossVisible(it.name, filtered, activeIds))).join('')}`
+                  : ''
+
+              const restSection =
+                restItems.length > 0
+                  ? `<div class="bz-group-title"><span>${restTitle}</span></div>
+                     ${restItems.map((it) => renderPopoverRow(kind, it, showLibBadge || hasSameNameAcrossVisible(it.name, filtered, activeIds))).join('')}`
+                  : ''
+
+              bodyHtml =
+                errorBanner +
+                recentSection +
+                restSection +
+                `<button type="button" class="bz-view-all-link" data-action="open-modal">查看全部与多来源对比 ›</button>`
+            }
+          }
+
+          const placeholderMap = {
+            expert: '搜索专家名称、专长领域…',
+            skill: '搜索技能或记忆能力…',
+            connector: '搜索连接器或工具…',
+          }
+
+          return `
+            <div class="bz-popover" role="region" aria-label="能力集市快捷面板">
+              <div class="bz-popover__filters">
+                <div class="bz-filter-cluster">
+                  <span class="bz-filter-label">来源</span>
+                  ${sourcePills}
+                </div>
+                <div class="bz-filter-cluster" role="group" aria-label="分类筛选">
+                  ${catChips}
+                </div>
+              </div>
+              <div class="bz-popover__list">
+                ${bodyHtml}
+              </div>
+              <div class="bz-popover__searchbar">
+                <span class="bz-popover__searchicon">${ICONS.search}</span>
+                <input
+                  type="search"
+                  class="bz-popover__searchinput"
+                  data-role="popover-search"
+                  placeholder="${placeholderMap[kind]}"
+                  value="${esc(state.searchQuery)}"
+                  aria-label="${placeholderMap[kind]}"
+                />
+                <button type="button" class="bz-popover__fullbtn" data-action="open-modal">
+                  ${ICONS.grid}
+                  <span>完整面板</span>
+                </button>
+              </div>
+            </div>
+          `
+        }
+
+        function renderConversationScreen() {
+          const visibleIds = enabledProvidersInSettings().map((p) => p.id)
+          const validExpert =
+            state.selectedExpert && visibleIds.includes(state.selectedExpert.providerId)
+              ? state.selectedExpert
+              : null
+          const activeExpName = validExpert ? validExpert.name : ''
+          const installedCount = SKILLS.filter(
+            (s) => visibleIds.includes(s.providerId) && isSkillInstalled(s),
+          ).length
+          const activeConnCount = CONNECTORS.filter(
+            (c) =>
+              visibleIds.includes(c.providerId) &&
+              !c.catalogOnly &&
+              state.connectorAuthed[c.id] &&
+              !state.disabledConnectors[c.id],
+          ).length
+
+          return `
+            <section class="stage-conversation" aria-label="会话工作区原型">
+              <div class="host-hero">
+                <div class="host-hero__avatar" aria-hidden="true">DS</div>
+                <h1 class="host-hero__title">DeepSeek 工作区，让 AI 帮你干活</h1>
+                <p class="host-hero__sub">
+                  已从设置页过滤已禁用的 Provider；仅展示当前启用的来源能力
+                </p>
+                ${
+                  validExpert
+                    ? `<div class="host-active-banner">
+                         <span>当前会话专家：</span>
+                         <strong>${esc(providerName(validExpert.providerId))} · ${esc(validExpert.name)}</strong>
+                         <button type="button" class="host-active-banner__clear" data-action="clear-expert" title="取消当前专家">✕ 退出</button>
+                       </div>`
+                    : `<div class="host-active-banner"><span>当前会话未指定专家（默认通用助手）</span></div>`
+                }
+              </div>
+
+              <div class="composer-wrap">
+                <div class="composer-shell" data-open="${Boolean(state.activeKind)}">
+                  ${renderPopover()}
+
+                  <div class="composer-input-area">
+                    <textarea
+                      class="composer-textarea"
+                      rows="2"
+                      placeholder="发消息或创建任务，/ 调用指令，@ 文件或对话"
+                      aria-label="对话输入框"
+                    ></textarea>
+                  </div>
+
+                  <div class="composer-toolbar">
+                    <div class="composer-toolbar__left">
+                      <span class="host-tool-btn host-tool-btn--circle" title="添加附件">${ICONS.plus}</span>
+                      <span class="host-tool-btn">${ICONS.shield}<span>完全权限 ⌄</span></span>
+                      <span class="host-tool-btn">${ICONS.desktop}<span>AI 控制电脑</span></span>
+                      <span class="host-divider" aria-hidden="true"></span>
+
+                      <div class="bz-pills-group" role="group" aria-label="能力集市入口">
+                        <button
+                          type="button"
+                          class="bz-pill-btn"
+                          data-kind="expert"
+                          data-active="${state.activeKind === 'expert'}"
+                          data-has-selection="${Boolean(activeExpName)}"
+                          aria-expanded="${state.activeKind === 'expert'}"
+                        >
+                          ${ICONS.expert}
+                          <span>专家</span>
+                          ${activeExpName ? `<span class="bz-pill-btn__sub">· ${esc(activeExpName)}</span>` : ''}
+                          <span class="bz-pill-btn__chev">${ICONS.chevron}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          class="bz-pill-btn"
+                          data-kind="skill"
+                          data-active="${state.activeKind === 'skill'}"
+                          data-has-selection="${installedCount > 0}"
+                          aria-expanded="${state.activeKind === 'skill'}"
+                        >
+                          ${ICONS.skill}
+                          <span>技能</span>
+                          ${installedCount > 0 ? `<span class="bz-pill-btn__sub">· ${installedCount}</span>` : ''}
+                          <span class="bz-pill-btn__chev">${ICONS.chevron}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          class="bz-pill-btn"
+                          data-kind="connector"
+                          data-active="${state.activeKind === 'connector'}"
+                          data-has-selection="${activeConnCount > 0}"
+                          aria-expanded="${state.activeKind === 'connector'}"
+                        >
+                          ${ICONS.connector}
+                          <span>连接器</span>
+                          ${activeConnCount > 0 ? `<span class="bz-pill-btn__sub">· ${activeConnCount}</span>` : ''}
+                          <span class="bz-pill-btn__chev">${ICONS.chevron}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="composer-toolbar__right">
+                      <span class="host-meta-chip">DeepSeek V4.1 · WB CN</span>
+                      <button type="button" class="host-send-btn" aria-label="发送消息">${ICONS.send}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          `
+        }
+
+        function renderFullModal() {
+          if (!state.modalOpen) return ''
+          const visibleProviders = enabledProvidersInSettings()
+          const activeIds = sessionActiveProviderIds()
+
+          const switchesHtml =
+            visibleProviders.length === 0
+              ? `<span class="bz-tag" data-kind="muted">所有 Provider 已在设置页禁用</span>`
+              : visibleProviders
+                  .map((p) => {
+                    const on = activeIds.includes(p.id)
+                    return `
+                      <button type="button" class="bz-switch-pill" role="switch" aria-checked="${on}" data-on="${on}" data-action="toggle-provider" data-provider="${p.id}">
+                        <span class="bz-switch-track" aria-hidden="true"></span>
+                        <span>${esc(p.displayName)}</span>
+                        <span class="bz-tag" data-kind="${on ? 'ok' : 'muted'}">${on ? '已选' : '未选'}</span>
+                      </button>
+                    `
+                  })
+                  .join('')
+
+          let gridHtml = ''
+
+          if (visibleProviders.length === 0) {
+            gridHtml = `
+              <div class="bz-empty-box" role="status">
+                <div class="bz-empty-box__title">暂无可展示的 Provider</div>
+                <div class="bz-empty-box__desc">全部 Provider 已在设置页中禁用；禁用后不会出现在会话面板与工作台。</div>
+                <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="goto-settings">前往设置页启用</button>
+              </div>
+            `
+          } else if (state.previewMode === 'loading') {
+            gridHtml = `
+              <div class="bz-lib-grid">
+                ${visibleProviders
+                  .map(
+                    (p) => `
+                  <div class="bz-lib-card">
+                    <div class="bz-lib-card__head"><span class="bz-lib-card__name">${esc(p.displayName)}</span><span class="bz-tag" data-kind="info">加载中</span></div>
+                    <div class="bz-lib-card__body">
+                      <div class="bz-skel-row"><div class="bz-skel-bar" style="width:72%"></div></div>
+                      <div class="bz-skel-row"><div class="bz-skel-bar" style="width:55%"></div></div>
+                    </div>
+                  </div>
+                `,
+                  )
+                  .join('')}
+              </div>
+            `
+          } else {
+            gridHtml = `<div class="bz-lib-grid">${visibleProviders.map((provider) => renderProviderColumn(provider)).join('')}</div>`
+          }
+
+          return `
+            <div class="bz-modal-scrim" data-action="close-modal-backdrop" role="presentation">
+              <div class="bz-modal" role="dialog" aria-modal="true" aria-label="集市完整工作台">
+                <div class="bz-modal__head">
+                  <div class="bz-modal__title-wrap">
+                    <h2 class="bz-modal__title">能力集市 · 完整工作台</h2>
+                    <p class="bz-modal__sub">仅展示设置页已启用的 Provider：选专家、装技能与记忆、控制本会话连接器</p>
+                  </div>
+                  <div class="bz-modal__head-right">
+                    ${
+                      state.selectedExpert && state.providerEnabled[state.selectedExpert.providerId]
+                        ? `<span class="bz-tag" data-kind="info">当前专家：${esc(state.selectedExpert.name)}</span>
+                           <button type="button" class="bz-btn bz-btn--sm" data-action="clear-expert">退出专家</button>`
+                        : `<span class="bz-tag" data-kind="muted">未选专家</span>`
+                    }
+                    <button type="button" class="bz-icon-close" data-action="close-modal" aria-label="关闭完整面板">
+                      ${ICONS.close}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="bz-modal__nav">
+                  <div class="bz-domain-tabs" role="tablist" aria-label="工作台视图">
+                    <button type="button" class="bz-domain-tab" role="tab" data-on="${state.modalTab === 'expert'}" data-action="modal-tab" data-tab="expert">${ICONS.expert} 专家</button>
+                    <button type="button" class="bz-domain-tab" role="tab" data-on="${state.modalTab === 'skill'}" data-action="modal-tab" data-tab="skill">${ICONS.skill} 技能与记忆</button>
+                    <button type="button" class="bz-domain-tab" role="tab" data-on="${state.modalTab === 'connector'}" data-action="modal-tab" data-tab="connector">${ICONS.connector} 连接器</button>
+                  </div>
+                  <div class="bz-provider-switches" role="group" aria-label="会话来源开关">
+                    ${switchesHtml}
+                  </div>
+                </div>
+
+                <div class="bz-modal__toolbar">
+                  <div class="bz-search-box">
+                    ${ICONS.search}
+                    <input type="search" data-role="modal-search" placeholder="在当前工作台筛选…" value="${esc(state.modalSearchQuery)}" aria-label="在完整面板内筛选" />
+                  </div>
+                  <span class="bz-tag" data-kind="muted">会话隔离 · 关闭面板保留当前选择</span>
+                </div>
+
+                <div class="bz-modal__body">
+                  ${gridHtml}
+                </div>
+
+                <div class="bz-modal__foot">
+                  <span>提示：如要彻底启用/禁用某个 Provider 或配置账号与凭据，请前往「设置页」。</span>
+                  <button type="button" class="bz-btn bz-btn--sm" data-action="close-modal">关闭（Esc）</button>
+                </div>
+              </div>
+            </div>
+          `
+        }
+
+        function renderProviderColumn(provider) {
+          const enabled = sessionActiveProviderIds().includes(provider.id)
+          const isError = state.previewMode === 'partial-error' && provider.id === 'demo'
+
+          if (isError) {
+            return `
+              <section class="bz-lib-card" data-error="true">
+                <div class="bz-lib-card__head">
+                  <span class="bz-lib-card__name">${esc(provider.displayName)} <span class="bz-tag bz-mono" data-kind="muted">${provider.id}</span></span>
+                  <span class="bz-tag" data-kind="error">出错</span>
+                </div>
+                <div class="bz-lib-card__body">
+                  <div class="bz-inline-alert" role="alert" style="margin:6px 0">
+                    <span>上游 500：只有本分区加载失败，其他来源照常显示。</span>
+                    <button type="button" class="bz-btn bz-btn--sm" data-action="recover-error">重试</button>
+                  </div>
+                </div>
+              </section>
+            `
+          }
+
+          const q = state.modalSearchQuery.trim().toLowerCase()
+          let contentHtml = ''
+
+          if (state.modalTab === 'expert') {
+            const list = EXPERTS.filter(
+              (x) =>
+                x.providerId === provider.id &&
+                (q === '' || (x.name + ' ' + x.desc).toLowerCase().includes(q)),
+            )
+            contentHtml =
+              state.previewMode === 'empty' || list.length === 0
+                ? `<div class="bz-empty-box"><div class="bz-empty-box__title">暂无匹配专家</div></div>`
+                : list
+                    .map((item) => {
+                      const current =
+                        state.selectedExpert &&
+                        state.selectedExpert.id === item.id &&
+                        state.selectedExpert.providerId === provider.id
+                      const actionBtn = !enabled
+                        ? `<span class="bz-tag" data-kind="disabled">禁用：本会话未选中</span>`
+                        : current
+                          ? `<span class="bz-tag" data-kind="info">当前使用</span><button type="button" class="bz-btn bz-btn--sm" disabled>已选</button>`
+                          : `<button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="pick-expert" data-id="${esc(item.id)}" data-provider="${provider.id}">选择</button>`
+                      return `
+                        <div class="bz-workbench-item" data-selected="${current}">
+                          <div class="bz-workbench-item__main">
+                            <div class="bz-workbench-item__title">${esc(item.name)}</div>
+                            <p class="bz-workbench-item__desc">${esc(item.desc)}</p>
+                          </div>
+                          <div class="bz-workbench-item__side">${actionBtn}</div>
+                        </div>
+                      `
+                    })
+                    .join('')
+          } else if (state.modalTab === 'skill') {
+            const allForLib = SKILLS.filter(
+              (x) =>
+                x.providerId === provider.id &&
+                (q === '' || (x.name + ' ' + x.slug + ' ' + x.desc).toLowerCase().includes(q)),
+            )
+            const marketSkills = allForLib.filter((x) => x.source === 'skillMarket')
+            const memSkills = allForLib.filter((x) => x.source === 'memoryMarket')
+
+            const renderSkillRow = (item) => {
+              const conflict =
+                state.previewMode === 'conflict' && item.conflictOwner
+                  ? item.conflictOwner
+                  : item.conflictOwner && state.installedSkills['workbuddy:' + item.slug]
+                    ? item.conflictOwner
+                    : null
+              const installed = isSkillInstalled(item)
+              let side = ''
+              if (!enabled) {
+                side = `<span class="bz-tag" data-kind="disabled">禁用：未选中</span>`
+              } else if (conflict) {
+                side = `<span class="bz-tag" data-kind="danger">冲突</span><button type="button" class="bz-btn bz-btn--sm" disabled>安装</button>`
+              } else if (installed) {
+                side = `<span class="bz-tag" data-kind="ok">已安装 · 只读</span><button type="button" class="bz-btn bz-btn--sm" data-action="install-skill" data-id="${esc(item.id)}" data-provider="${provider.id}" data-slug="${esc(item.slug)}">重装</button>`
+              } else {
+                side = `<button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="install-skill" data-id="${esc(item.id)}" data-provider="${provider.id}" data-slug="${esc(item.slug)}">安装</button>`
+              }
+
+              const conflictDetail = conflict
+                ? `<details class="bz-conflict-details">
+                     <summary>查看已有安装（已被 ${esc(conflict)} 安装）</summary>
+                     <p>目标目录 <code class="bz-mono">.dsh/skills/${esc(item.slug)}/</code> 已由 ${esc(conflict)} 安装，跨来源同名不覆盖、不加后缀。</p>
+                   </details>`
+                : ''
+
+              return `
+                <div class="bz-workbench-item">
+                  <div class="bz-workbench-item__main">
+                    <div class="bz-workbench-item__title">
+                      <span>${esc(item.name)}</span>
+                      <span class="bz-mono" style="color:var(--bz-fg-dim)">${esc(item.slug)}</span>
+                    </div>
+                    <p class="bz-workbench-item__desc">${esc(item.desc)}</p>
+                    ${conflictDetail}
+                  </div>
+                  <div class="bz-workbench-item__side">${side}</div>
+                </div>
+              `
+            }
+
+            const memSection =
+              provider.capabilities.memoryMarket !== true
+                ? `<div class="bz-subhead">记忆市场 <span class="bz-tag" data-kind="disabled">禁用：未声明 memoryMarket</span></div>
+                   <p class="bz-workbench-item__desc" style="padding:4px 6px">该 Provider 未声明 memoryMarket 能力，不以「暂无条目」冒充空态。</p>`
+                : `<div class="bz-subhead">记忆市场 <span class="bz-tag" data-kind="readonly">memoryMarket</span></div>
+                   ${memSkills.map(renderSkillRow).join('') || '<p class="bz-workbench-item__desc" style="padding:4px 6px">无匹配记忆条目</p>'}`
+
+            contentHtml = `
+              <div class="bz-subhead">技能市场 <span class="bz-tag" data-kind="readonly">skillMarket</span></div>
+              ${marketSkills.map(renderSkillRow).join('') || '<p class="bz-workbench-item__desc" style="padding:4px 6px">无匹配技能</p>'}
+              ${memSection}
+            `
+          } else {
+            const conns = CONNECTORS.filter(
+              (x) =>
+                x.providerId === provider.id &&
+                (q === '' || (x.name + ' ' + x.desc).toLowerCase().includes(q)),
+            )
+            contentHtml =
+              conns.length === 0
+                ? `<div class="bz-empty-box"><div class="bz-empty-box__title">暂无连接器</div></div>`
+                : conns
+                    .map((item) => {
+                      const authed = Boolean(state.connectorAuthed[item.id])
+                      const sessionOn = !state.disabledConnectors[item.id]
+                      let side = ''
+                      if (item.catalogOnly) {
+                        side = `<span class="bz-tag" data-kind="muted">目录只读</span><button type="button" class="bz-btn bz-btn--sm" data-action="copy-config" data-id="${esc(item.id)}">复制片段</button>`
+                      } else if (!authed) {
+                        side = `<span class="bz-tag" data-kind="warn">需授权</span><button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="auth-connector" data-id="${esc(item.id)}">授权</button>`
+                      } else {
+                        side = `<span class="bz-tag" data-kind="${sessionOn ? 'ok' : 'muted'}">${sessionOn ? '已启用' : '本会话停用'}</span>
+                                <button type="button" class="bz-btn bz-btn--sm" data-action="toggle-connector" data-id="${esc(item.id)}">${sessionOn ? '停用' : '启用'}</button>
+                                <button type="button" class="bz-btn bz-btn--sm bz-btn--ghost" data-action="copy-config" data-id="${esc(item.id)}">复制片段</button>`
+                      }
+                      return `
+                        <div class="bz-workbench-item">
+                          <div class="bz-workbench-item__main">
+                            <div class="bz-workbench-item__title">${esc(item.name)} <span class="bz-tag bz-mono" data-kind="muted">${item.transport} · ${item.tools} 工具</span></div>
+                            <p class="bz-workbench-item__desc">${esc(item.desc)}</p>
+                          </div>
+                          <div class="bz-workbench-item__side">${side}</div>
+                        </div>
+                      `
+                    })
+                    .join('')
+          }
+
+          return `
+            <section class="bz-lib-card" data-muted="${!enabled}">
+              <div class="bz-lib-card__head">
+                <span class="bz-lib-card__name">
+                  <span>${esc(provider.displayName)}</span>
+                  <span class="bz-tag bz-mono" data-kind="muted">${esc(provider.id)}</span>
+                </span>
+                ${
+                  enabled
+                    ? `<span class="bz-tag" data-kind="ok">已启用</span>`
+                    : `<button type="button" class="bz-btn bz-btn--sm bz-btn--accent" data-action="toggle-provider" data-provider="${provider.id}">在会话启用</button>`
+                }
+              </div>
+              <div class="bz-lib-card__body">${contentHtml}</div>
+            </section>
+          `
+        }
+
+        // ===================================================================
+        // Render: Screen A (Settings Page — Provider 栏 + 启用禁用 + 跟随 DSH 配色)
+        // ===================================================================
+        function renderSettingsScreen() {
+          const provider = PROVIDERS.find((p) => p.id === state.settingsProvider) || PROVIDERS[0]
+          const isError = state.previewMode === 'partial-error' && provider.id === 'demo'
+          const providerOn = state.providerEnabled[provider.id] === true
+          const conns = CONNECTORS.filter((c) => c.providerId === provider.id && !c.catalogOnly)
+
+          let accountHtml = ''
+          if (state.loginPhase === 'logged' && provider.id === 'workbuddy') {
+            accountHtml = `
+              <div class="settings-field">
+                <div class="settings-field__label">登录状态 <span class="bz-tag" data-kind="ok">已登录</span> <span class="bz-tag" data-kind="readonly">只读</span></div>
+                <div class="settings-field__row">
+                  <span class="bz-mono">wb_user_9f3c（国内版 codebuddy.cn）</span>
+                  <span class="bz-tag" data-kind="muted">到期 2026-12-31</span>
+                </div>
+              </div>
+              <div class="settings-field">
+                <div class="settings-field__label">操作</div>
+                <div class="settings-field__row">
+                  <button type="button" class="bz-btn bz-btn--sm bz-btn--danger" data-action="ask-logout">退出登录</button>
+                </div>
+                <p class="settings-field__hint">退出会删除该 Provider 账号目录下的登录记录，不影响当前会话专家选择。</p>
+              </div>
+            `
+          } else if (state.loginPhase === 'waiting') {
+            accountHtml = `
+              <div class="settings-field">
+                <div class="settings-field__label">扫码授权中 <span class="bz-tag" data-kind="info">等待确认</span></div>
+                <p class="settings-field__hint">请在浏览器打开授权页并完成扫码：<code class="bz-mono">https://codebuddy.cn/login?code=bz_92f1</code></p>
+                <div class="settings-field__row">
+                  <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="finish-login">我已完成</button>
+                  <button type="button" class="bz-btn bz-btn--sm" data-action="cancel-login">取消</button>
+                </div>
+              </div>
+            `
+          } else {
+            const configured = provider.credential.configured
+            accountHtml = `
+              <div class="settings-field">
+                <div class="settings-field__label">登录区域 <span class="bz-tag" data-kind="req">必选</span></div>
+                <div class="settings-field__row">
+                  <select class="bz-select" data-role="region-select" aria-required="true" aria-invalid="${state.regionError}">
+                    <option value="">请选择（国内版 / 国际版）</option>
+                    <option value="cn" ${state.loginRegion === 'cn' ? 'selected' : ''}>国内版（codebuddy.cn 账号体系）</option>
+                    <option value="global" ${state.loginRegion === 'global' ? 'selected' : ''}>国际版（workbuddy.ai 账号体系）</option>
+                  </select>
+                </div>
+                <p class="settings-field__hint ${state.regionError ? 'settings-field__hint--error' : ''}">
+                  ${state.regionError ? '错在哪：尚未选择登录区域。怎么改：在上方下拉里选「国内版」或「国际版」后再点登录。' : '国内版与国际版账号体系独立，默认不预选。'}
+                </p>
+              </div>
+              <div class="settings-field">
+                <div class="settings-field__row">
+                  <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="start-login" ${!configured ? 'disabled' : ''}>登录</button>
+                  ${!configured ? `<span class="bz-tag" data-kind="disabled">禁用：凭据未配置</span>` : ''}
+                </div>
+              </div>
+            `
+          }
+
+          return `
+            <section class="stage-settings" aria-label="设置页原型">
+              <aside class="settings-nav" aria-label="宿主设置导航">
+                <div class="settings-nav__item">常规</div>
+                <div class="settings-nav__item">模型服务</div>
+                <div class="settings-nav__item">插件管理</div>
+                <div class="settings-nav__item" data-active="true">${ICONS.grid} <span>集市</span></div>
+                <div class="settings-nav__item">隐私与凭据</div>
+              </aside>
+
+              <div class="settings-main">
+                <div class="settings-header">
+                  <div>
+                    <h2>集市设置</h2>
+                    <p class="settings-field__hint">配色跟随 DSH 基础设置自动适配深浅主题；以下按 Provider 分页管理。</p>
+                  </div>
+                  <div class="settings-field__row">
+                    <span class="bz-tag" data-kind="muted">当前版本 v1.0.0</span>
+                    ${
+                      state.updateConfirm
+                        ? `<button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="apply-update">确认更新到 v1.1.0</button>
+                           <button type="button" class="bz-btn bz-btn--sm" data-action="cancel-update">取消</button>`
+                        : `<button type="button" class="bz-btn bz-btn--sm bz-btn--accent" data-action="ask-update">发现新版本 v1.1.0 · 立即更新</button>`
+                    }
+                  </div>
+                </div>
+
+                <!-- Provider 栏：一个个 tab 切换到一个 Provider -->
+                <div class="settings-provider-bar">
+                  <span class="settings-provider-bar__label">Provider 栏</span>
+                  <div class="settings-tabs" role="tablist" aria-label="Provider 栏">
+                    ${PROVIDERS.map((p) => {
+                      const tabErr = state.previewMode === 'partial-error' && p.id === 'demo'
+                      const tabEnabled = state.providerEnabled[p.id] === true
+                      return `
+                        <button
+                          type="button"
+                          class="settings-tab"
+                          role="tab"
+                          aria-selected="${state.settingsProvider === p.id}"
+                          data-on="${state.settingsProvider === p.id}"
+                          data-disabled="${!tabEnabled}"
+                          data-error="${tabErr}"
+                          data-action="settings-tab"
+                          data-provider="${p.id}"
+                        >
+                          <span>${esc(p.displayName)}</span>
+                          ${
+                            tabErr
+                              ? '<span class="bz-tag" data-kind="error">出错</span>'
+                              : `<span class="bz-tag" data-kind="${tabEnabled ? 'ok' : 'disabled'}">${tabEnabled ? '已启用' : '已禁用'}</span>`
+                          }
+                        </button>
+                      `
+                    }).join('')}
+                  </div>
+                </div>
+
+                <!-- Provider 启用/禁用控制卡：禁用后不在会话面板显示 -->
+                <div class="settings-provider-banner" data-enabled="${providerOn}">
+                  <div class="settings-provider-banner__meta">
+                    <div class="settings-provider-banner__title">
+                      <span>${esc(provider.displayName)}</span>
+                      <span class="bz-tag bz-mono" data-kind="muted">${esc(provider.id)}</span>
+                      <span class="bz-tag" data-kind="${providerOn ? 'ok' : 'disabled'}">
+                        ${providerOn ? '已启用 · 在会话面板显示' : '已禁用 · 不在会话面板显示'}
+                      </span>
+                    </div>
+                    <p class="settings-provider-banner__desc">${esc(provider.description)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="bz-switch-pill"
+                    role="switch"
+                    aria-checked="${providerOn}"
+                    data-on="${providerOn}"
+                    data-action="toggle-settings-provider"
+                    data-provider="${provider.id}"
+                  >
+                    <span class="bz-switch-track" aria-hidden="true"></span>
+                    <span>${providerOn ? '已启用' : '已禁用'}</span>
+                  </button>
+                </div>
+
+                ${
+                  isError
+                    ? `<div class="settings-card">
+                         <div class="bz-inline-alert" role="alert" style="margin:0">
+                           <span><strong>${esc(provider.displayName)}</strong> 状态读取失败（500）：不影响其他 Provider 页签切换。</span>
+                           <button type="button" class="bz-btn bz-btn--sm" data-action="recover-error">重试</button>
+                         </div>
+                       </div>`
+                    : `<div class="settings-grid" data-muted="${!providerOn}">
+                         <article class="settings-card">
+                           <div class="settings-card__head">
+                             <h3 class="settings-card__title">账号与登录</h3>
+                             <span class="bz-tag bz-mono" data-kind="muted">${esc(provider.id)}</span>
+                           </div>
+                           ${accountHtml}
+                         </article>
+
+                         <article class="settings-card">
+                           <div class="settings-card__head">
+                             <h3 class="settings-card__title">宿主凭据</h3>
+                             <span class="bz-tag" data-kind="${provider.credential.configured ? 'ok' : 'error'}">
+                               ${provider.credential.configured ? '已配置' : '未配置'}
+                             </span>
+                           </div>
+                           <div class="settings-field">
+                             <div class="settings-field__label">凭证引用名 <span class="bz-tag" data-kind="readonly">只读</span></div>
+                             <code class="bz-mono">${esc(provider.credential.name)}</code>
+                           </div>
+                           <div class="settings-field">
+                             <div class="settings-field__label">凭证值</div>
+                             ${
+                               provider.credential.configured
+                                 ? `<span class="bz-mono">${esc(provider.credential.masked)}（模式 ${esc(provider.credential.mode)} · 宿主托管）</span>`
+                                 : `<p class="settings-field__hint settings-field__hint--error">错在哪：宿主凭据服务中未写入 ${esc(provider.credential.name)}。怎么改：在「隐私与凭据」新增该条目并保存。</p>`
+                             }
+                           </div>
+                         </article>
+
+                         <article class="settings-card">
+                           <div class="settings-card__head">
+                             <h3 class="settings-card__title">本地缓存</h3>
+                             <span class="bz-mono">${(provider.cache.bytes / 1048576).toFixed(1)} MB · ${provider.cache.entries} 条</span>
+                           </div>
+                           <p class="settings-field__hint bz-mono">${esc(provider.cache.dir)}</p>
+                           <div class="settings-field__row">
+                             <button type="button" class="bz-btn bz-btn--sm bz-btn--danger" data-action="ask-clear-cache" ${provider.cache.bytes === 0 ? 'disabled' : ''}>清理缓存</button>
+                             ${provider.cache.bytes === 0 ? '<span class="bz-tag" data-kind="disabled">禁用：当前无缓存</span>' : ''}
+                           </div>
+                         </article>
+
+                         <article class="settings-card">
+                           <div class="settings-card__head">
+                             <h3 class="settings-card__title">连接器授权</h3>
+                             <span class="bz-tag" data-kind="muted">${conns.length} 项</span>
+                           </div>
+                           <ul class="settings-list">
+                             ${conns
+                               .map((c) => {
+                                 const authed = Boolean(state.connectorAuthed[c.id])
+                                 return `
+                                   <li>
+                                     <div>
+                                       <div style="font-weight:600">${esc(c.name)} <span class="bz-tag bz-mono" data-kind="muted">${c.transport} · ${c.tools}</span></div>
+                                       <div class="settings-field__hint">${esc(c.desc)}</div>
+                                     </div>
+                                     <div class="settings-field__row">
+                                       <span class="bz-tag" data-kind="${authed ? 'ok' : 'warn'}">${authed ? '已授权' : '需授权'}</span>
+                                       ${
+                                         authed
+                                           ? `<button type="button" class="bz-btn bz-btn--sm" data-action="copy-config" data-id="${c.id}">复制配置片段</button>
+                                              <button type="button" class="bz-btn bz-btn--sm bz-btn--danger" data-action="ask-revoke" data-id="${c.id}">清除授权</button>`
+                                           : `<button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="auth-connector" data-id="${c.id}">授权</button>`
+                                       }
+                                     </div>
+                                   </li>
+                                 `
+                               })
+                               .join('')}
+                           </ul>
+                         </article>
+                       </div>`
+                }
+              </div>
+            </section>
+          `
+        }
+
+        function renderConfirmDialog() {
+          if (!state.confirmModal) return ''
+          const c = state.confirmModal
+          return `
+            <div class="bz-modal-scrim" data-action="cancel-confirm" role="presentation">
+              <div class="bz-modal" style="width:min(440px,100%);" role="dialog" aria-modal="true" aria-label="${esc(c.title)}">
+                <div class="bz-modal__head">
+                  <h3 class="bz-modal__title">${esc(c.title)}</h3>
+                  <button type="button" class="bz-icon-close" data-action="cancel-confirm" aria-label="取消">${ICONS.close}</button>
+                </div>
+                <div class="bz-modal__body">
+                  <p style="margin:0;color:var(--bz-fg-secondary)">${esc(c.body)}</p>
+                </div>
+                <div class="bz-modal__foot" style="justify-content:flex-end">
+                  <button type="button" class="bz-btn bz-btn--sm" data-action="cancel-confirm">取消</button>
+                  <button type="button" class="bz-btn bz-btn--sm bz-btn--danger" data-action="run-confirm">${esc(c.confirmLabel)}</button>
+                </div>
+              </div>
+            </div>
+          `
+        }
+
+        function renderToast() {
+          const root = document.getElementById('toast-root')
+          root.innerHTML = state.toast
+            ? `<div class="bz-toast-floating" data-kind="${state.toast.kind}" role="status">${esc(state.toast.text)}</div>`
+            : ''
+        }
+
+        function render() {
+          document.body.setAttribute(
+            'data-ds-dark-theme',
+            state.theme === 'dark' ? 'true' : 'false',
+          )
+          document.querySelectorAll('[data-screen]').forEach((el) => {
+            el.setAttribute('data-active', el.getAttribute('data-screen') === state.screen)
+          })
+          document.querySelectorAll('[data-theme-btn]').forEach((el) => {
+            el.setAttribute('data-active', el.getAttribute('data-theme-btn') === state.theme)
+          })
+          document.querySelectorAll('[data-mode]').forEach((el) => {
+            el.setAttribute('data-active', el.getAttribute('data-mode') === state.previewMode)
+          })
+
+          const app = document.getElementById('app')
+          const modalRoot = document.getElementById('modal-root')
+
+          const activeEl = document.activeElement
+          const activeRole = activeEl ? activeEl.getAttribute('data-role') : null
+          const caret =
+            activeEl && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null
+
+          app.innerHTML =
+            state.screen === 'conversation' ? renderConversationScreen() : renderSettingsScreen()
+          modalRoot.innerHTML = state.confirmModal ? renderConfirmDialog() : renderFullModal()
+          renderToast()
+
+          if (activeRole) {
+            const nextInput = document.querySelector(`[data-role="${activeRole}"]`)
+            if (nextInput) {
+              nextInput.focus()
+              if (caret !== null && typeof nextInput.setSelectionRange === 'function') {
+                nextInput.setSelectionRange(caret, caret)
+              }
+            }
+          }
+        }
+
+        document.addEventListener('click', (event) => {
+          const screenBtn = event.target.closest('[data-screen]')
+          if (screenBtn) {
+            state.screen = screenBtn.getAttribute('data-screen')
+            render()
+            return
+          }
+
+          const themeBtn = event.target.closest('[data-theme-btn]')
+          if (themeBtn) {
+            state.theme = themeBtn.getAttribute('data-theme-btn')
+            render()
+            return
+          }
+
+          const modeBtn = event.target.closest('[data-mode]')
+          if (modeBtn) {
+            state.previewMode = modeBtn.getAttribute('data-mode')
+            render()
+            return
+          }
+
+          const pillBtn = event.target.closest('.bz-pill-btn[data-kind]')
+          if (pillBtn) {
+            const nextKind = pillBtn.getAttribute('data-kind')
+            state.activeKind = state.activeKind === nextKind ? null : nextKind
+            state.category = 'all'
+            state.searchQuery = ''
+            render()
+            return
+          }
+
+          const actionEl = event.target.closest('[data-action]')
+          if (actionEl) {
+            const action = actionEl.getAttribute('data-action')
+            if (action === 'toggle-settings-provider') {
+              const id = actionEl.getAttribute('data-provider')
+              const next = !state.providerEnabled[id]
+              state.providerEnabled[id] = next
+              if (next && !state.activeProviders.includes(id)) state.activeProviders.push(id)
+              showToast(
+                next
+                  ? `已启用 Provider「${providerName(id)}」，将在会话面板显示`
+                  : `已禁用 Provider「${providerName(id)}」，会话面板不再显示`,
+              )
+              render()
+              return
+            }
+            if (action === 'goto-settings') {
+              state.modalOpen = false
+              state.screen = 'settings'
+              render()
+              return
+            }
+            if (action === 'toggle-provider') {
+              const id = actionEl.getAttribute('data-provider')
+              const idx = state.activeProviders.indexOf(id)
+              if (idx === -1) state.activeProviders.push(id)
+              else state.activeProviders.splice(idx, 1)
+              showToast(
+                sessionActiveProviderIds().length === 0
+                  ? '已清空当前会话来源筛选'
+                  : `当前会话已选 ${sessionActiveProviderIds().length} 个来源`,
+              )
+              render()
+              return
+            }
+            if (action === 'enable-default-provider') {
+              const first = enabledProvidersInSettings()[0]
+              if (first) state.activeProviders = [first.id]
+              state.previewMode = 'normal'
+              render()
+              return
+            }
+            if (action === 'set-category') {
+              state.category = actionEl.getAttribute('data-category')
+              render()
+              return
+            }
+            if (action === 'reset-filters') {
+              state.category = 'all'
+              state.searchQuery = ''
+              state.previewMode = 'normal'
+              render()
+              return
+            }
+            if (action === 'recover-error') {
+              state.previewMode = 'normal'
+              showToast('Demo Provider 已恢复连接')
+              render()
+              return
+            }
+            if (action === 'open-modal') {
+              state.modalTab = state.activeKind || 'expert'
+              state.modalOpen = true
+              state.activeKind = null
+              render()
+              return
+            }
+            if (action === 'open-modal-connector') {
+              state.modalTab = 'connector'
+              state.modalOpen = true
+              state.activeKind = null
+              render()
+              return
+            }
+            if (action === 'close-modal') {
+              state.modalOpen = false
+              render()
+              return
+            }
+            if (action === 'close-modal-backdrop' && event.target === actionEl) {
+              state.modalOpen = false
+              render()
+              return
+            }
+            if (action === 'modal-tab') {
+              state.modalTab = actionEl.getAttribute('data-tab')
+              render()
+              return
+            }
+            if (action === 'pick-expert') {
+              const id = actionEl.getAttribute('data-id')
+              const pId = actionEl.getAttribute('data-provider')
+              const found = EXPERTS.find((e) => e.id === id && e.providerId === pId)
+              if (found) {
+                state.selectedExpert = { providerId: pId, id: found.id, name: found.name }
+                showToast(`已选用 ${providerName(pId)} · ${found.name}（下一条消息生效）`)
+                render()
+              }
+              return
+            }
+            if (action === 'clear-expert') {
+              state.selectedExpert = null
+              showToast('已退出当前专家，恢复默认助手')
+              render()
+              return
+            }
+            if (action === 'install-skill') {
+              const pId = actionEl.getAttribute('data-provider')
+              const slug = actionEl.getAttribute('data-slug')
+              const already = Boolean(state.installedSkills[pId + ':' + slug])
+              state.installedSkills[pId + ':' + slug] = true
+              showToast(`${already ? '已重装' : '已安装'}技能 ${slug}`)
+              render()
+              return
+            }
+            if (action === 'toggle-connector') {
+              const id = actionEl.getAttribute('data-id')
+              state.disabledConnectors[id] = !state.disabledConnectors[id]
+              showToast(
+                state.disabledConnectors[id] ? '已在本会话停用连接器' : '已在本会话启用连接器',
+              )
+              render()
+              return
+            }
+            if (action === 'auth-connector') {
+              const id = actionEl.getAttribute('data-id')
+              state.connectorAuthed[id] = true
+              state.disabledConnectors[id] = false
+              showToast('连接器已完成授权并启用')
+              render()
+              return
+            }
+            if (action === 'copy-config') {
+              showToast('已复制 MCP 配置片段（只产出文本，不改宿主配置）')
+              return
+            }
+            if (action === 'settings-tab') {
+              state.settingsProvider = actionEl.getAttribute('data-provider')
+              render()
+              return
+            }
+            if (action === 'start-login') {
+              if (state.loginRegion !== 'cn' && state.loginRegion !== 'global') {
+                state.regionError = true
+                showToast('请先选择登录区域（国内版 / 国际版）', 'error')
+                render()
+                return
+              }
+              state.regionError = false
+              state.loginPhase = 'waiting'
+              render()
+              return
+            }
+            if (action === 'finish-login') {
+              state.loginPhase = 'logged'
+              showToast('登录成功：已保存账号凭证')
+              render()
+              return
+            }
+            if (action === 'cancel-login') {
+              state.loginPhase = 'logged-out'
+              render()
+              return
+            }
+            if (action === 'ask-logout') {
+              state.confirmModal = {
+                title: '退出 ' + providerName(state.settingsProvider) + ' 账号',
+                body: '将删除该 Provider 账号目录下的登录记录，之后需重新扫码；当前会话专家选择不受影响。',
+                confirmLabel: '确认退出',
+                onRun: () => {
+                  state.loginPhase = 'logged-out'
+                  showToast('已退出登录')
+                },
+              }
+              render()
+              return
+            }
+            if (action === 'ask-clear-cache') {
+              state.confirmModal = {
+                title: '清理本地缓存',
+                body: '将删除当前 Provider 的 18 个缓存条目（2.4 MB），下次访问需重新拉取。',
+                confirmLabel: '清理缓存',
+                onRun: () => {
+                  PROVIDERS[0].cache.bytes = 0
+                  PROVIDERS[0].cache.entries = 0
+                  showToast('已清理 2.4 MB 缓存')
+                },
+              }
+              render()
+              return
+            }
+            if (action === 'ask-revoke') {
+              const id = actionEl.getAttribute('data-id')
+              state.confirmModal = {
+                title: '清除连接器授权',
+                body: '移除后该连接器的工具随即不可用，需要时须重新授权。',
+                confirmLabel: '移除授权',
+                onRun: () => {
+                  state.connectorAuthed[id] = false
+                  showToast('已清除连接器授权')
+                },
+              }
+              render()
+              return
+            }
+            if (action === 'ask-update') {
+              state.updateConfirm = true
+              render()
+              return
+            }
+            if (action === 'cancel-update') {
+              state.updateConfirm = false
+              render()
+              return
+            }
+            if (action === 'apply-update') {
+              state.updateConfirm = false
+              showToast('已提交更新到 v1.1.0，重启 DSH 后生效')
+              return
+            }
+            if (
+              action === 'cancel-confirm' &&
+              (event.target === actionEl || actionEl.tagName === 'BUTTON')
+            ) {
+              state.confirmModal = null
+              render()
+              return
+            }
+            if (action === 'run-confirm') {
+              const fn = state.confirmModal && state.confirmModal.onRun
+              state.confirmModal = null
+              if (fn) fn()
+              render()
+              return
+            }
+          }
+
+          const row = event.target.closest('.bz-doubao-row[data-row-kind="expert"]')
+          if (row && !event.target.closest('button')) {
+            const id = row.getAttribute('data-id')
+            const pId = row.getAttribute('data-provider')
+            const found = EXPERTS.find((e) => e.id === id && e.providerId === pId)
+            if (found) {
+              state.selectedExpert = { providerId: pId, id: found.id, name: found.name }
+              showToast(`已选用 ${providerName(pId)} · ${found.name}`)
+              render()
+            }
+          }
+        })
+
+        document.addEventListener('input', (event) => {
+          const role = event.target.getAttribute('data-role')
+          if (role === 'popover-search') {
+            state.searchQuery = event.target.value
+            render()
+          } else if (role === 'modal-search') {
+            state.modalSearchQuery = event.target.value
+            render()
+          }
+        })
+
+        document.addEventListener('change', (event) => {
+          if (event.target.getAttribute('data-role') === 'region-select') {
+            state.loginRegion = event.target.value
+            state.regionError = false
+            render()
+          }
+        })
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            if (state.confirmModal) {
+              state.confirmModal = null
+              render()
+            } else if (state.modalOpen) {
+              state.modalOpen = false
+              render()
+            } else if (state.activeKind) {
+              state.activeKind = null
+              render()
+            }
+          }
+        })
+
+        render()
+      })()
+    </script>
+  </body>
+</html>
