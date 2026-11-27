@@ -524,3 +524,42 @@ test('installSkill reports that it broke a leftover lock when force is used', as
   assert.deepEqual(forced.files, ['SKILL.md'])
   await assert.rejects(fs.stat(lockDir), /ENOENT/)
 })
+
+test('installSkill falls back to listSkills when called with a skill slug instead of market skill_id', async () => {
+  const root = await workspace()
+  const bytes = packageBytes({ 'word-docx/SKILL.md': SKILL_MD })
+  const calls = []
+  const portal = {
+    async post(route, payload) {
+      calls.push({ route, payload })
+      if (route === '/operation-platform/market/skill/get-by-ids') {
+        const id = payload.skill_ids[0]
+        if (id === 'skill_real_99') {
+          return {
+            code: 0,
+            data: { skills: [{ skill_id: 'skill_real_99', name: 'word-docx', download_url: DOWNLOAD_URL }] },
+          }
+        }
+        return { code: 0, data: { skills: [] } }
+      }
+      throw new Error(`unexpected route: ${route}`)
+    },
+    async listSkills({ query }) {
+      calls.push({ route: 'listSkills', query })
+      return {
+        items: [{ id: 'skill_real_99', slug: 'word-docx', name: 'word-docx' }],
+      }
+    },
+  }
+  const installed = await installSkill({
+    portal,
+    providerId: 'workbuddy',
+    skillId: 'word-docx',
+    workspace: root,
+    allowHosts: [CDN_HOST],
+    fetchImpl: fakeFetch(bytes),
+  })
+  assert.equal(installed.installed.slug, 'word-docx')
+  assert.equal(installed.installed.skillId, 'skill_real_99')
+  assert.equal(calls.some(entry => entry.route === 'listSkills' && entry.query === 'word-docx'), true)
+})

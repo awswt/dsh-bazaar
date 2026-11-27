@@ -329,3 +329,56 @@ test('账号登录缺 region 时由服务端以 BAZAAR_PARAM_INVALID 拒绝，�
   assert.equal(ok.body.ok, true)
   assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [['accounts.start', 'global']])
 })
+
+test('SessionManager.clear({ keepActive: true }) 退出专家但保留会话活跃来源（含默认清空反向控制）', async () => {
+  const { SessionManager } = await import('../lib/session.js')
+  const { tempDirSync } = await import('./temp.mjs')
+  const dir = tempDirSync('bz-clear-keep-')
+  const manager = new SessionManager({
+    ctx: {
+      agents: { get: () => undefined, list: () => [] },
+      skills: {
+        list: async () => [],
+        snapshot: async () => ({ skills: [], complete: true }),
+        get: async () => undefined,
+        registerProvider: () => () => {},
+      },
+      logger: { info() {}, warn() {} },
+    },
+    config: { dataDir: dir, providerId: 'workbuddy' },
+  })
+  await manager.writeActive('s-keep', ['workbuddy'])
+  const keepView = await manager.clear('s-keep', { keepActive: true })
+  assert.deepEqual(keepView.activeProviders, ['workbuddy'], 'keepActive=true 必须保留活跃来源')
+  assert.equal(keepView.expert, null)
+
+  // 反向控制：默认 clear 仍清空 activeProviders。
+  const dropView = await manager.clear('s-keep')
+  assert.deepEqual(dropView.activeProviders, [])
+})
+
+test('SessionManager.readActive 在只读 loadState 后仍识别全新会话为 undefined，显式写 [] 后返回 []', async () => {
+  const { SessionManager } = await import('../lib/session.js')
+  const { tempDirSync } = await import('./temp.mjs')
+  const dir = tempDirSync('bz-read-active-race-')
+  const manager = new SessionManager({
+    ctx: {
+      agents: { get: () => undefined, list: () => [] },
+      skills: {
+        list: async () => [],
+        snapshot: async () => ({ skills: [], complete: true }),
+        get: async () => undefined,
+        registerProvider: () => () => {},
+      },
+      logger: { info() {}, warn() {} },
+    },
+    config: { dataDir: dir, providerId: 'workbuddy' },
+  })
+  // 模拟前端并发调用 GET /state 先于 GET /providers：只读 loadState 会把 revision=0 放进内存缓存。
+  await manager.loadState('s-fresh')
+  assert.equal(await manager.readActive('s-fresh'), undefined, '只读 loadState 不得把全新会话误判成已初始化')
+
+  // 显式清空写入磁盘（revision>=1）后，readActive 必须返回 [] 尊重用户选择。
+  await manager.writeActive('s-fresh', [])
+  assert.deepEqual(await manager.readActive('s-fresh'), [])
+})

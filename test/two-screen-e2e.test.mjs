@@ -131,8 +131,10 @@ function createBazaar(config) {
       }
     }
     // 两家都返回同名专家：逼出 qualify() 的 provider 前缀。
-    const rows = [expert('数据工程师', { providerId: providerId, categoryId: 'eng' })]
-    const filtered = rows.filter((item) => {
+    const baseRows = Array.isArray(state.customExperts)
+      ? state.customExperts.map((item) => Object.assign({ providerId: providerId }, item))
+      : [expert('数据工程师', { providerId: providerId, categoryId: 'eng' })]
+    const filtered = baseRows.filter((item) => {
       if (query !== '' && item.name.includes(query) !== true) return false
       if (categoryId !== '' && item.categoryId !== categoryId) return false
       return true
@@ -145,9 +147,9 @@ function createBazaar(config) {
       items: filtered.map((item) =>
         Object.assign({}, item, { qualifiedName: provider.displayName + ' · ' + item.name }),
       ),
-      total: rows.length,
+      total: Number(state.totalExperts ?? baseRows.length),
       matchedTotal: filtered.length,
-      hasMore: false,
+      hasMore: state.expertsHasMore === true && query === '',
     }
   }
   const skillsGroup = (providerId) => {
@@ -172,12 +174,16 @@ function createBazaar(config) {
       items: [
         {
           providerId: providerId,
+          id: state.skillIdMap?.pdf ?? 'skill_pdf_001',
           slug: 'pdf',
           description: '把 PDF 转成可检索文本',
           source: 'skillMarket',
-          installed: true,
-          installedBy: state.installed.pdf,
+          installed: state.installed.pdf !== undefined,
+          installedBy: state.installed.pdf ?? null,
         },
+        ...(Array.isArray(state.extraSkills)
+          ? state.extraSkills.map((item) => Object.assign({ providerId: providerId }, item))
+          : []),
         memoryDeclared
           ? {
               providerId: providerId,
@@ -260,7 +266,8 @@ function createBazaar(config) {
         disabledProviders: state.providers
           .map((provider) => provider.id)
           .filter((id) => state.disabledProviders.has(id) === true),
-        defaultProvider: '',
+        defaultProvider: state.defaultProvider ?? '',
+        ...(state.initialized === undefined ? {} : { initialized: state.initialized }),
       })
       return true
     }
@@ -286,6 +293,7 @@ function createBazaar(config) {
       }
       // 空数组是合法空态：服务端不拒绝。
       state.activeProviders = next.slice()
+      if (state.initialized !== undefined) state.initialized = true
       sendJson(response, 200, {
         ok: true,
         sessionId: body.sessionId,
@@ -372,6 +380,11 @@ function createBazaar(config) {
         name: '数据工程师',
       }
       sendJson(response, 200, { ok: true, sessionId: body.sessionId, expert: state.expert })
+      return true
+    }
+    if (path === '/dsh-bazaar/off' && request.method === 'POST') {
+      state.expert = null
+      sendJson(response, 200, { ok: true, sessionId: body.sessionId, expert: null })
       return true
     }
 
@@ -1130,5 +1143,132 @@ test('上浮面板：三个胶囊各自切换，搜索走本地筛，完整面�
     assert.equal(ui.find('data-popover-search', 'expert'), null, '再次点击应收起面板')
   } finally {
     await service.close()
+  }
+})
+
+test('上浮面板：新会话 initialized=false 自动激活已启用来源，选专家后可退出，报错不谎报空集', async () => {
+  const service = await startBazaar({
+    initialized: false,
+    disabledProviders: new Set(['demo']),
+    expertsHasMore: true,
+    totalExperts: 100,
+    customExperts: [
+      expert('数据工程师', { categoryId: 'eng' }),
+      expert('财报分析师', { categoryId: 'data' }),
+    ],
+  })
+  try {
+    const ui = await bootScreen(service, 'composer')
+    // 自动激活了唯一启用的 workbuddy，不激活被全局禁用的 demo。
+    assert.deepEqual(service.state.activeProviders, ['workbuddy'])
+
+    // 点开专家胶囊立刻看到专家列表，不需要手动勾选来源。
+    await ui.click('data-kind', 'expert')
+    assert.equal(ui.texts().includes('数据工程师'), true)
+
+    // 选择专家，再点退出按钮调用 /dsh-bazaar/off 成功退出。
+    await ui.click('data-pick-expert', 'workbuddy:ex_数据工程师')
+    assert.notEqual(ui.find('data-clear-current-expert', 'true'), null)
+    const offBefore = requestsTo(service, '/off').length
+    await ui.click('data-clear-current-expert', 'true')
+    assert.equal(requestsTo(service, '/off').length, offBefore + 1)
+    assert.equal(ui.find('data-clear-current-expert', 'true'), null)
+
+    // 当市场有更多条（hasMore）时，按 Enter 触发服务端全库搜索。
+    const search = ui.find('data-popover-search', 'expert')
+    await ui.harness.type(search, '财报')
+    const beforeEnter = requestsTo(service, '/experts').length
+    await ui.harness.fire(search, 'onKeyDown', { key: 'Enter' })
+    await ui.settle()
+    const afterEnter = requestsTo(service, '/experts').slice(beforeEnter)
+    assert.equal(afterEnter.length >= 1, true, '有更多条目时按 Enter 必须发服务端查询')
+    assert.equal(afterEnter.at(-1).search.get('query'), '财报')
+    assert.equal(ui.texts().includes('财报分析师'), true)
+
+    // 全部活跃库报错时必须呈现真实错误态，绝不谎报「未找到匹配的专家」。
+    service.state.failExperts.add('workbuddy')
+    await ui.click('data-reset-filters', 'expert').catch(() => {})
+    await ui.harness.fire(ui.find('data-popover-search', 'expert'), 'onKeyDown', { key: 'Enter' })
+    await ui.settle()
+    assert.equal(ui.texts().includes('专家读取失败'), true)
+    assert.equal(ui.texts().includes('未找到匹配的专家'), false)
+  } finally {
+    await service.close()
+  }
+})
+
+test('上浮面板：安装技能提交真实 skill_id 而非 slug，本地已装专家行按 plugin 也能高亮选中态', async () => {
+  const service = await startBazaar({
+    initialized: false,
+    disabledProviders: new Set(['demo']),
+    installed: {},
+    extraSkills: [
+      {
+        id: 'skill_987654321',
+        slug: 'docx-tools',
+        name: 'Docx 工具',
+        description: '处理 Word 文档',
+        source: 'skillMarket',
+        installed: false,
+      },
+    ],
+    customExperts: [
+      {
+        id: 'ai-agent-engineer',
+        plugin: 'ai-agent-engineer',
+        name: '程枢',
+        description: 'AI Agent 工程师',
+      },
+    ],
+    expert: {
+      id: 'ex_zYK6DThTcjqH',
+      plugin: 'ai-agent-engineer',
+      providerId: 'workbuddy',
+      displayName: '程枢',
+    },
+  })
+  try {
+    const ui = await bootScreen(service, 'composer')
+
+    // 专家浮层里合并的本地行 id='ai-agent-engineer'，虽然与 currentExpert.id='ex_zYK6DThTcjqH' 不同，
+    // 但同 provider 下 plugin 相同，必须高亮显示「当前使用」与「退出」。
+    await ui.click('data-kind', 'expert')
+    assert.equal(ui.texts().includes('当前使用'), true, 'plugin 匹配应高亮当前使用')
+    assert.notEqual(ui.find('data-clear-expert', 'workbuddy'), null, '行内应出现退出按钮')
+
+    // 切到技能浮层并点击安装 docx-tools：发往 /skill-install 的必须是真实 skill_id。
+    await ui.click('data-kind', 'skill')
+    await ui.click('data-install-skill', 'workbuddy:docx-tools')
+    const installCalls = requestsTo(service, '/skill-install')
+    assert.equal(installCalls.length, 1)
+    assert.equal(installCalls[0].body.skillId, 'skill_987654321')
+  } finally {
+    await service.close()
+  }
+})
+
+test('屏 A：defaultProvider 为空串时不误报未注册警告，配置未知 id 时如实提示', async () => {
+  const emptyDefault = await startBazaar({ defaultProvider: '' })
+  try {
+    const ui = await bootScreen(emptyDefault, 'settings')
+    assert.equal(
+      ui.texts().includes('未注册：已回落为首个已注册的专家库'),
+      false,
+      '未配置默认专家库（空串）不得显示未注册错误提示',
+    )
+  } finally {
+    await emptyDefault.close()
+  }
+
+  const missingDefault = await startBazaar({ defaultProvider: 'ghost-lib' })
+  try {
+    const ui = await bootScreen(missingDefault, 'settings')
+    assert.equal(
+      ui.texts().includes('默认专家库 ghost-lib 未注册'),
+      true,
+      '显式配置了未注册的 defaultProvider 时必须给出纠正提示',
+    )
+  } finally {
+    await missingDefault.close()
   }
 })

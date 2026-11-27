@@ -209,3 +209,110 @@ test('skill market route serves normalized results and auth-required fallback', 
   assert.equal(body.total, 2)
   assert.equal(body.items[0].name, '技能A')
 })
+
+test('resolveAuth 优先匹配 portalBaseUrl 对应区域的账号，避免国际版长效 token 触发国内版 401', async () => {
+  const { resolveAuth } = await import('../lib/auth.js')
+  const { WorkBuddyConnector } = await import('../lib/connector.js')
+  const { tempDirSync } = await import('./temp.mjs')
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+
+  const root = tempDirSync('bz-region-auth-')
+  const vault = path.join(root, 'vault')
+  await fs.mkdir(path.join(vault, 'cn'), { recursive: true })
+  await fs.mkdir(path.join(vault, 'global'), { recursive: true })
+  const now = Date.now()
+  // 真实场景复现：global 账号 1 年有效期，cn 账号 30 天有效期。
+  await fs.writeFile(
+    path.join(vault, 'cn', 'cn-acc.json'),
+    JSON.stringify({
+      accountId: 'cn-acc',
+      account: { nickname: '国内测试' },
+      auth: { accessToken: 'tok-cn', expiresAt: now + 30 * 86400_000 },
+    }),
+  )
+  await fs.writeFile(
+    path.join(vault, 'global', 'gl-acc.json'),
+    JSON.stringify({
+      accountId: 'gl-acc',
+      account: { nickname: '国际测试' },
+      auth: { accessToken: 'tok-global', expiresAt: now + 365 * 86400_000 },
+    }),
+  )
+
+  const connector = new WorkBuddyConnector({
+    vaultDir: vault,
+    accountsDir: path.join(root, 'accounts'),
+  })
+
+  // 指向 workbuddy.cn 时必须挑中 cn 账号，绝不能因 global 过期更晚而发错站点。
+  const cnAuth = await resolveAuth(
+    { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.cn' },
+    { connector },
+  )
+  assert.equal(cnAuth.value, 'Bearer tok-cn')
+  assert.equal(cnAuth.baseUrl, 'https://www.workbuddy.cn')
+  assert.equal(cnAuth.region, 'cn')
+
+  // 指向 workbuddy.ai 时必须挑中 global 账号。
+  const glAuth = await resolveAuth(
+    { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.ai' },
+    { connector },
+  )
+  assert.equal(glAuth.value, 'Bearer tok-global')
+  assert.equal(glAuth.baseUrl, 'https://www.workbuddy.ai')
+  assert.equal(glAuth.region, 'global')
+
+  // 只有 global 账号时，自动切换 baseUrl 到 workbuddy.ai，避免往 workbuddy.cn 发国际 token。
+  await fs.unlink(path.join(vault, 'cn', 'cn-acc.json'))
+  const fallbackAuth = await resolveAuth(
+    { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.cn' },
+    { connector },
+  )
+  assert.equal(fallbackAuth.value, 'Bearer tok-global')
+  assert.equal(fallbackAuth.baseUrl, 'https://www.workbuddy.ai')
+  assert.equal(fallbackAuth.region, 'global')
+})
+
+test('PortalMarket.listExperts 支持单分类 categoryId 并报告 hasMore，遇到 401 自动换号重试一次', async () => {
+  const seen = []
+  let authCalls = 0
+  const portal = new PortalMarket({
+    baseUrl: 'https://www.workbuddy.cn',
+    timeoutMs: 5000,
+    retries: 0,
+    allowHosts: ['www.workbuddy.cn'],
+    authProvider: async (extra = {}) => {
+      authCalls += 1
+      if (Array.isArray(extra.excludeAccountIds) && extra.excludeAccountIds.includes('acc-1')) {
+        return { header: 'Authorization', value: 'Bearer good-token', accountId: 'acc-2' }
+      }
+      return { header: 'Authorization', value: 'Bearer bad-token', accountId: 'acc-1' }
+    },
+    fetchImpl: async (url, options) => {
+      seen.push({ url: String(url), auth: options.headers.Authorization, body: JSON.parse(options.body) })
+      if (options.headers.Authorization === 'Bearer bad-token') {
+        return { ok: false, status: 401, headers: { get: () => null }, json: async () => ({}) }
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          code: 0,
+          data: {
+            total_count: 100,
+            experts: [{ expert_id: 'ex_1', display_name_zh: 'Python 专家', categories: [12] }],
+          },
+        }),
+      }
+    },
+  })
+
+  const result = await portal.listExperts({ categoryId: '12', page: 1, pageSize: 24 })
+  assert.equal(authCalls, 3, '首次取号 + 401 探测备选号 + 换号重发')
+  assert.equal(seen.length, 2)
+  assert.deepEqual(seen[1].body.categories, [12])
+  assert.equal(result.hasMore, true)
+  assert.equal(result.items[0].displayName, 'Python 专家')
+})
