@@ -114,7 +114,12 @@ listMemorySkills({ query?, page?, pageSize? })  // → { items, total }
 searchMemory({ query, limit? })                 // → { items, total }
 ```
 
-宿主未安装 `dsh-mnemon` 时返回 `{ ok: false, code: 'BAZAAR_MEMORY_UNAVAILABLE' }`，**不要**返回空列表——空列表会让用户以为"记忆市场是空的"，而实际是"这个能力根本不可用"。
+**面板不再消费这个域。** 技能分区只列每个 provider 自己的 `skillMarket`，前端没有记忆能力
+的页签、分类标签与段落，`listSkills` 也不再聚合 `sources.memoryMarket`。
+
+契约本身保留：已声明 `memoryMarket` 的 provider 仍会被校验，域方法也仍可通过工具与路由
+单独调用；宿主未安装 `dsh-mnemon` 时返回 `{ ok: false, code: 'BAZAAR_MEMORY_UNAVAILABLE' }`，
+**不要**返回空列表——空列表会让调用方以为"记忆市场是空的"，而实际是"这个能力根本不可用"。
 
 ### 2.4 `connectorMarket`
 
@@ -228,14 +233,14 @@ ctx.bazaar.providers.get(providerId)             // → { ok:true, provider } | 
 | `BAZAAR_MARKET_UNAVAILABLE` | 上游不可达且无可回落的数据源 |
 | `BAZAAR_PORTAL_AUTH_REQUIRED` | 在线门户要求登录态 |
 
-### 技能与记忆
+### 技能
 
 | 码 | 触发条件 |
 | --- | --- |
 | `BAZAAR_SKILL_NAME_CONFLICT` | 目标 slug 已被另一个库的技能占用 |
 | `BAZAAR_SKILL_SLUG_INVALID` | 从市场元数据推导出的 slug 不合法 |
 | `BAZAAR_SKILL_PACKAGE_TOO_LARGE` | 技能包超过体积上限 |
-| `BAZAAR_MEMORY_UNAVAILABLE` | 记忆市场依赖的 `dsh-mnemon` 未安装 |
+| `BAZAAR_MEMORY_UNAVAILABLE` | 记忆市场依赖的 `dsh-mnemon` 未安装（面板已不消费该域） |
 
 ### 连接器
 

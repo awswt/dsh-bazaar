@@ -237,8 +237,10 @@ function managerWith(views) {
   })
 }
 
-test('技能列表按库分组，skillMarket 与 memoryMarket 两个来源并列标注', async () => {
+test('技能列表按库分组，只聚合各 provider 自己的 skillMarket（记忆能力已下线）', async () => {
   const w = wiring()
+  // 连 provider 自己声明了 memoryMarket，也不该再被聚合进来：前端已经没有它的入口，
+  // 服务端多聚合一份只会造出让用户以为「还能用」的死数据。
   const alpha = skillProvider('alpha', {
     skills: [{ id: 's1', name: '市场技能' }],
     memorySkills: [{ id: 'm1', name: '记忆技能' }],
@@ -255,11 +257,12 @@ test('技能列表按库分组，skillMarket 与 memoryMarket 两个来源并列
     group.items.map(function (item) {
       return item.source
     }),
-    ['skillMarket', 'memoryMarket'],
+    ['skillMarket'],
+    '只应出现 skillMarket 来源的条目',
   )
   assert.equal(group.items[0].providerId, 'alpha')
   assert.equal(group.sources.skillMarket.status, 'ok')
-  assert.equal(group.sources.memoryMarket.status, 'ok')
+  assert.equal(group.sources.memoryMarket, undefined, '不再投影 memoryMarket 来源')
 })
 
 test('未声明技能市场的库标成 undeclared，已声明它的库照常返回', async () => {
@@ -282,8 +285,10 @@ test('未声明技能市场的库标成 undeclared，已声明它的库照常返
   assert.equal(listed.groups[1].items.length, 1)
 })
 
-test('记忆市场缺宿主插件时报 MEMORY_UNAVAILABLE，不伪造空列表', async () => {
+test('技能列表不再询问记忆市场：workbuddy 也不会因 dsh-mnemon 未装而拖累整组', async () => {
   const w = wiring()
+  // 反向控制：workbuddy 的 listMemorySkills 现在恒回 MEMORY_UNAVAILABLE。若服务端仍在
+  // 聚合它，这里的 status 就会被降级成 error/unavailable；断言仍是 ok 才能证明真的没调用。
   const provider = createWorkbuddyProvider({
     portal: {
       async listSkills() {
@@ -298,10 +303,9 @@ test('记忆市场缺宿主插件时报 MEMORY_UNAVAILABLE，不伪造空列表'
   const listed = await w.views.listSkills({ sessionId: 's1' })
   assert.equal(listed.ok, true)
   const group = listed.groups[0]
-  assert.equal(group.sources.memoryMarket.status, 'unavailable')
-  assert.equal(group.sources.memoryMarket.code, CODES.MEMORY_UNAVAILABLE)
-  assert.match(group.sources.memoryMarket.message, /dsh-mnemon/)
-  assert.match(group.sources.memoryMarket.message, /未安装/)
+  assert.equal(group.status, 'ok', '技能市场正常，整组就不该因为记忆市场被降级')
+  assert.equal(group.sources.memoryMarket, undefined)
+  assert.equal(group.sources.skillMarket.status, 'ok')
 })
 
 test('安装技能必须带 providerId；未注册的库不产生任何出网', async () => {

@@ -174,6 +174,9 @@ function renderNotes({ version, previous, artifact, testCount, testFilesCount, c
     for (const line of commits) lines.push(`- ${line}`)
     lines.push('')
   }
+  // 每段结尾都会 push 一个空行，直接 join 会得到「\n\n」结尾——prettier 只接受单个
+  // 行尾换行，质量门因此会把上一版生成的 notes 判成未格式化。这里统一收敛尾部空行。
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
   return `${lines.join('\n')}\n`
 }
 

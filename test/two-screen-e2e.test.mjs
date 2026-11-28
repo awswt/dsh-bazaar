@@ -168,25 +168,17 @@ function createBazaar(config) {
       hasMore: state.expertsHasMore === true && query === '',
     }
   }
+  // 与真实服务端一致：技能列表只聚合各 provider 自己的 skillMarket。记忆能力已下线，
+  // 夹具不再产出 memoryMarket 来源，否则用例会测一个界面上根本不存在的东西。
   const skillsGroup = (providerId) => {
     const provider = state.providers.find((item) => item.id === providerId)
-    const memoryDeclared = provider.capabilities.memoryMarket === true
     return {
       providerId: providerId,
       displayName: provider.displayName,
       capabilities: provider.capabilities,
       status: 'ok',
       total: 1,
-      sources: {
-        skillMarket: { status: 'ok', total: 1 },
-        memoryMarket: memoryDeclared
-          ? { status: 'ok', available: true, total: 1 }
-          : {
-              status: 'undeclared',
-              code: 'BAZAAR_CAPABILITY_UNDECLARED',
-              message: '未声明 memoryMarket',
-            },
-      },
+      sources: { skillMarket: { status: 'ok', total: 1 } },
       items: [
         {
           providerId: providerId,
@@ -200,15 +192,7 @@ function createBazaar(config) {
         ...(Array.isArray(state.extraSkills)
           ? state.extraSkills.map((item) => Object.assign({ providerId: providerId }, item))
           : []),
-        memoryDeclared
-          ? {
-              providerId: providerId,
-              slug: 'memory-search',
-              description: '记忆检索',
-              source: 'memoryMarket',
-            }
-          : null,
-      ].filter((item) => item !== null),
+      ],
     }
   }
   const accountsGroup = (providerId) => {
@@ -1124,14 +1108,14 @@ test('屏 B：来源开关组可选（不是必填），全不选时给空态入
   }
 })
 
-test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 memoryMarket 不冒充空态', async () => {
+test('屏 B：多库分组并列、跨库同名冲突禁用安装、技能分区只列各库自己的技能市场', async () => {
   const service = await startBazaar()
   try {
     const ui = await bootScreen(service, 'session')
     // 来源开关是 `button role="switch"`：点一下即切换，不是勾选框的 onChange。
     await ui.click('data-provider-switch', 'workbuddy')
     await ui.click('data-provider-switch', 'demo')
-    // 技能在「技能与记忆」页签下：工作台按域分页签，默认停在「专家」。
+    // 技能在「技能」页签下：工作台按域分页签，默认停在「专家」。
     await ui.click('data-domain-tab', 'skill')
 
     assert.equal(ui.texts().includes('WorkBuddy 专家库'), true)
@@ -1156,12 +1140,21 @@ test('屏 B：多库分组并列、跨库同名冲突禁用安装、未声明 me
     const installCallsBefore = requestsTo(service, '/skill-install').length
     assert.equal(installCallsBefore, 0, '冲突条目点不动，也就不会发安装请求')
 
-    // 未声明 memoryMarket：不拿「暂无条目」冒充空态，而是明说这一域没有。
-    assert.equal(ui.texts().includes('禁用：未声明 memoryMarket'), true)
+    // 记忆能力已下线：技能分区只列各库自己的技能市场，界面上不应再有任何记忆入口。
     assert.equal(
-      ui.texts().includes('该 Provider 未声明 memoryMarket 能力'),
+      ui.texts().includes('记忆'),
+      false,
+      '技能分区不该再出现「记忆市场」段落或「记忆」标签',
+    )
+    const skillTabs = ui.tree.findAll((node) => node.props['data-category-tab'] !== undefined)
+    assert.equal(
+      skillTabs.some((node) => node.text.trim() === '记忆能力'),
+      false,
+      '「记忆能力」分类标签必须已移除',
+    )
+    assert.equal(
+      skillTabs.length > 0 && skillTabs.every((node) => node.text.trim() !== '记忆能力'),
       true,
-      '要解释清楚这不是空列表，而是没有这个能力',
     )
 
     // 服务端仍会拒绝越权安装：直接 POST 拿到 409，与界面禁用形成双重保障。
