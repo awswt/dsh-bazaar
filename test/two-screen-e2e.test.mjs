@@ -80,6 +80,8 @@ function createBazaar(config) {
       demo: { entries: 0, bytes: 0 },
     },
     accounts: { workbuddy: [], demo: [] },
+    pendingLogins: { workbuddy: [], demo: [] },
+    pendingPolls: 0,
     expert: null,
     installed: { pdf: 'workbuddy' },
     // 全局启用开关：缺省全启用，只有显式写进来的 id 才关闭（与
@@ -217,6 +219,9 @@ function createBazaar(config) {
       status: 'ok',
       items: rows.map((row) => Object.assign({ providerId: providerId }, row)),
       total: rows.length,
+      // 真实 listAccounts 把 provider 的 pending 登录会话投影到分组上（用户还没扫码
+      // 完成的那几条）。前端重挂后靠它续上轮询，所以夹具必须也带出来。
+      pending: state.pendingLogins[providerId] ?? [],
     }
   }
   const connectorsGroup = (providerId) => {
@@ -481,6 +486,9 @@ function createBazaar(config) {
             })
             return true
           }
+          state.pendingLogins[providerId] = [
+            { loginId: 'bz_login_1', region: region, expiresAtMs: Date.now() + 600_000 },
+          ]
           sendJson(response, 200, {
             ok: true,
             action: 'login',
@@ -493,6 +501,18 @@ function createBazaar(config) {
           return true
         }
         if (body.action === 'poll') {
+          // 真实上游对「还没扫码」回 `{code:11217, msg:'login ing...'}`，服务端把它原样
+          // 放进 `result`（见 lib/wb-login.js 的 pollLogin）。`pendingPolls` 让夹具先回
+          // 若干次 pending，用来验证前端不会把 pending 当失败停掉轮询。
+          if (state.pendingPolls > 0) {
+            state.pendingPolls -= 1
+            sendJson(response, 200, {
+              ok: true,
+              action: 'poll',
+              result: { done: false, pending: true, code: 11217, message: 'login ing...' },
+            })
+            return true
+          }
           state.accounts[providerId] = [
             {
               accountId: 'acc-own-1',
@@ -505,6 +525,7 @@ function createBazaar(config) {
               usable: true,
             },
           ]
+          state.pendingLogins[providerId] = []
           state.authRequiredProviders?.delete(providerId)
           sendJson(response, 200, {
             ok: true,
@@ -910,6 +931,105 @@ test('屏 A：清理缓存与退出登录都要二次确认，取消不执行', 
         .length,
       1,
     )
+  } finally {
+    await service.close()
+  }
+})
+
+test('登录轮询：上游 11217「还没扫码」是等待而不是失败，轮询不停、授权完成后自动生效', async () => {
+  // 反向控制：判据本身必须先能识别出「done+code」才算终态，否则下面的 UI 断言即使
+  // 全绿也可能是「什么都没判」。两条一起断言，扫描器写坏了不会静默通过。
+  const service = await startBazaar({
+    initialized: false,
+    authRequiredProviders: new Set(['workbuddy']),
+  })
+  try {
+    const probeUi = await bootScreen(service, 'settings')
+    const pendingLoginError = probeUi.internals.pendingLoginError
+    assert.equal(
+      pendingLoginError({ done: false, pending: true, code: 11217, message: 'login ing...' }),
+      null,
+      'done:false 的 11217 必须是等待，不能被当成失败',
+    )
+    assert.equal(pendingLoginError({ done: true, account: { uid: 'u1' } }), null, '成功后无错误')
+    const terminal = pendingLoginError({
+      done: true,
+      code: 'BAZAAR_LOGIN_EXPIRED',
+      error: 'sign-in session not found',
+    })
+    assert.notEqual(terminal, null, 'done:true 且带 code/error 才是终态失败')
+    assert.equal(terminal.code, 'BAZAAR_LOGIN_EXPIRED')
+
+    // 屏 A：先连着等待两次，第三次才授权完成。
+    service.state.pendingPolls = 2
+    const settingsUi = await bootScreen(service, 'settings')
+    const settingsLoginBtn = settingsUi.find('data-login', 'workbuddy')
+    assert.notEqual(settingsLoginBtn, null, '未认证时设置页要有登录入口')
+    await settingsUi.click('data-login', 'workbuddy')
+    assert.equal(
+      settingsUi.find('data-login-poll', 'workbuddy') !== null ||
+        settingsUi.texts().includes('等待你在浏览器中完成网页授权'),
+      true,
+      '发起后应进入等待授权态',
+    )
+
+    // 手动推进轮询：前两次都是 pending，界面必须仍停在等待态而不是报错。
+    await settingsUi.click('data-login-poll', 'workbuddy')
+    assert.equal(settingsUi.texts().includes('登录失败'), false, 'pending 不能被渲染成登录失败')
+    await settingsUi.click('data-login-poll', 'workbuddy')
+    assert.equal(settingsUi.texts().includes('登录失败'), false, '连续 pending 仍然不是失败')
+    // 第三次：上游放行，账号落盘并刷新。
+    if (settingsUi.find('data-login-poll', 'workbuddy') !== null) {
+      await settingsUi.click('data-login-poll', 'workbuddy')
+    }
+    assert.equal(
+      settingsUi.texts().includes('已认证'),
+      true,
+      '授权完成后设置页必须显示已认证（而不是停在未认证）',
+    )
+    const polls = requestsTo(service, '/accounts/action').filter(
+      (item) => item.body?.action === 'poll',
+    )
+    assert.equal(polls.length >= 3, true, '至少轮询三次：两次 pending、一次成功')
+  } finally {
+    await service.close()
+  }
+})
+
+test('登录轮询：设置页在等待授权期间被关掉再打开，仍会按服务端 pending 续上轮询并自动变已认证', async () => {
+  // 服务端把未完成的登录会话留在进程内（`/accounts` 的 `pending`），前端原本只在
+  // 发起登录的那一次渲染里持有 loginId。关掉设置页再打开就等于丢掉它——用户已经
+  // 在浏览器里扫完码，却没有任何组件再去问一次，界面永远停在「未认证」。
+  const service = await startBazaar({
+    initialized: false,
+    authRequiredProviders: new Set(['workbuddy']),
+  })
+  try {
+    const first = await bootScreen(service, 'settings')
+    await first.click('data-login', 'workbuddy')
+    // 关掉页面：卸载会停掉轮询定时器（真实宿主切走 slot 也是这条路径）。
+    first.harness.mount(null)
+    await first.settle()
+
+    assert.equal(
+      service.state.pendingLogins.workbuddy.length,
+      1,
+      '登录会话仍在服务端挂起，这是重挂能续上的前提',
+    )
+
+    // 重新打开设置页：不点任何按钮，只靠 pending 恢复。
+    const second = await bootScreen(service, 'settings')
+    const recovered = second.find('data-login-poll', 'workbuddy')
+    assert.notEqual(recovered, null, '重挂后应回到「等待授权」态而不是「未认证」')
+
+    // 再等一轮定时器（1500ms）让轮询真正打出去并成功。
+    await new Promise((resolve) => setTimeout(resolve, 1700))
+    await second.settle()
+    assert.equal(second.texts().includes('已认证'), true, '续上的轮询完成后必须自动变成已认证')
+    const polls = requestsTo(service, '/accounts/action').filter(
+      (item) => item.body?.action === 'poll',
+    )
+    assert.equal(polls.length >= 1, true, '重挂后必须真的发出轮询请求')
   } finally {
     await service.close()
   }
