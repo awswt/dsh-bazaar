@@ -210,42 +210,27 @@ test('skill market route serves normalized results and auth-required fallback', 
   assert.equal(body.items[0].name, '技能A')
 })
 
-test('resolveAuth 优先匹配 portalBaseUrl 对应区域的账号，避免国际版长效 token 触发国内版 401', async () => {
+test('resolveAuth 使用自有单凭证并根据凭证区域自动对齐门户域名，避免跨站点 401', async () => {
   const { resolveAuth } = await import('../lib/auth.js')
   const { WorkBuddyConnector } = await import('../lib/connector.js')
   const { tempDirSync } = await import('./temp.mjs')
-  const fs = await import('node:fs/promises')
   const path = await import('node:path')
 
   const root = tempDirSync('bz-region-auth-')
-  const vault = path.join(root, 'vault')
-  await fs.mkdir(path.join(vault, 'cn'), { recursive: true })
-  await fs.mkdir(path.join(vault, 'global'), { recursive: true })
   const now = Date.now()
-  // 真实场景复现：global 账号 1 年有效期，cn 账号 30 天有效期。
-  await fs.writeFile(
-    path.join(vault, 'cn', 'cn-acc.json'),
-    JSON.stringify({
-      accountId: 'cn-acc',
-      account: { nickname: '国内测试' },
-      auth: { accessToken: 'tok-cn', expiresAt: now + 30 * 86400_000 },
-    }),
-  )
-  await fs.writeFile(
-    path.join(vault, 'global', 'gl-acc.json'),
-    JSON.stringify({
-      accountId: 'gl-acc',
-      account: { nickname: '国际测试' },
-      auth: { accessToken: 'tok-global', expiresAt: now + 365 * 86400_000 },
-    }),
-  )
-
   const connector = new WorkBuddyConnector({
-    vaultDir: vault,
     accountsDir: path.join(root, 'accounts'),
   })
 
-  // 指向 workbuddy.cn 时必须挑中 cn 账号，绝不能因 global 过期更晚而发错站点。
+  await connector.saveAccount({
+    uid: 'cn-uid',
+    nickname: '国内测试',
+    region: 'cn',
+    accessToken: 'tok-cn',
+    expiresAtMs: now + 30 * 86400_000,
+    domain: 'www.codebuddy.cn',
+  })
+
   const cnAuth = await resolveAuth(
     { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.cn' },
     { connector },
@@ -254,17 +239,15 @@ test('resolveAuth 优先匹配 portalBaseUrl 对应区域的账号，避免国�
   assert.equal(cnAuth.baseUrl, 'https://www.workbuddy.cn')
   assert.equal(cnAuth.region, 'cn')
 
-  // 指向 workbuddy.ai 时必须挑中 global 账号。
-  const glAuth = await resolveAuth(
-    { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.ai' },
-    { connector },
-  )
-  assert.equal(glAuth.value, 'Bearer tok-global')
-  assert.equal(glAuth.baseUrl, 'https://www.workbuddy.ai')
-  assert.equal(glAuth.region, 'global')
-
-  // 只有 global 账号时，自动切换 baseUrl 到 workbuddy.ai，避免往 workbuddy.cn 发国际 token。
-  await fs.unlink(path.join(vault, 'cn', 'cn-acc.json'))
+  // 覆盖保存为国际凭证后，即使默认 portalBaseUrl 配了 workbuddy.cn，也自动切换到 workbuddy.ai
+  await connector.saveAccount({
+    uid: 'gl-uid',
+    nickname: '国际测试',
+    region: 'global',
+    accessToken: 'tok-global',
+    expiresAtMs: now + 365 * 86400_000,
+    domain: 'www.workbuddy.ai',
+  })
   const fallbackAuth = await resolveAuth(
     { mode: 'auto', portalBaseUrl: 'https://www.workbuddy.cn' },
     { connector },

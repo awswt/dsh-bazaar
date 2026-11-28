@@ -152,20 +152,20 @@ Content-Type: application/json
     });
 %}
 
-### 链路 BAZAAR-LOGIN-REGION-001 / 步骤1：界面上未选区域时由服务端兜底拒绝，且点名字段（溯源 spec:account-auth#登录区域必选且不预选）
+### 链路 BAZAAR-LOGIN-REGION-001 / 步骤1：显式传大小写不匹配的区域时由服务端拦截，且点名字段并回显合法集
 # @name loginWithoutRegion
 POST {{BASE_URL}}/dsh-bazaar/providers/{{PROVIDER_ID}}/accounts/action
 Content-Type: application/json
 
-{"providerId":"{{PROVIDER_ID}}","action":"login"}
+{"providerId":"{{PROVIDER_ID}}","action":"login","region":"CN"}
 
 > {%
-    client.test("缺 region 被拒，字段级错误可锚定", function() {
+    client.test("大小写非法 region 被拒，字段级错误可锚定", function() {
         client.assert(response.status === 400, "期望 400，实际 " + response.status);
         client.assert(response.body.ok === false, "必须标记失败");
         client.assert(response.body.code === "BAZAAR_PARAM_INVALID", "期望 BAZAAR_PARAM_INVALID，实际 " + response.body.code);
         client.assert(response.body.field === "region", "必须点名 region 字段，实际 " + response.body.field);
-        client.assert(String(response.body.message).indexOf("登录区域必选") >= 0, "错误文案必须说明区域必选：" + response.body.message);
+        client.assert(String(response.body.message).indexOf("CN") >= 0, "错误文案必须回显收到的值：" + response.body.message);
         client.assert(Array.isArray(response.body.admitted) === true && response.body.admitted.join(",") === "cn,global", "必须回显可接受取值，实际 " + JSON.stringify(response.body.admitted));
     });
 %}

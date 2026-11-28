@@ -88,7 +88,6 @@ function makeHarness(options = {}) {
     cancel: () => ({ cancelled: true }),
     refresh: async () => ({}),
     remove: async () => ({ removed: true }),
-    importLegacy: async () => ({ imported: 0 }),
   }
   const portal = { async available() { return true } }
   const ctx = {
@@ -295,20 +294,19 @@ test('a failing mnemon detector degrades to unavailable instead of failing the r
   assert.equal(result.body.state.expert.displayName, '演示专家')
 })
 
-test('账号登录缺 region 时由服务端以 BAZAAR_PARAM_INVALID 拒绝，且不落到账号服务', async () => {
-  // 屏 A 的「未选区域不发请求」只是界面自保；绕过界面直接 POST 必须同样被拒，
-  // 否则「必选」就只是文案，服务端仍会拿着 undefined 去猜令牌该发往哪套上游。
+test('账号登录显式传非法 region 时由服务端以 BAZAAR_PARAM_INVALID 拒绝，缺省则走默认官方认证入口', async () => {
   const { routes, calls } = makeHarness()
   const handler = routes.get('/dsh-bazaar/accounts/action')
   assert.equal(typeof handler, 'function')
 
-  const missing = await call(handler, 'POST', '/dsh-bazaar/accounts/action', { action: 'start' })
-  assert.equal(missing.status, 400)
-  assert.equal(missing.body.code, 'BAZAAR_PARAM_INVALID')
-  assert.equal(missing.body.field, 'region')
-  assert.deepEqual(missing.body.admitted, ['cn', 'global'])
-  // 失败信封的口径与 provider 层一致：{ ok:false, code, message, ...details }。
-  assert.match(missing.body.message, /登录区域必选/)
+  const badCase = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
+    action: 'start',
+    region: 'CN',
+  })
+  assert.equal(badCase.status, 400)
+  assert.equal(badCase.body.code, 'BAZAAR_PARAM_INVALID')
+  assert.equal(badCase.body.field, 'region')
+  assert.deepEqual(badCase.body.admitted, ['cn', 'global'])
 
   const bogus = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
     action: 'start',
@@ -318,16 +316,17 @@ test('账号登录缺 region 时由服务端以 BAZAAR_PARAM_INVALID 拒绝，�
   assert.equal(bogus.body.field, 'region')
   assert.match(bogus.body.message, /"mars"/)
 
-  // 反向控制：两次被拒期间账号服务一次都没被调用；只有合法区域才真的开始登录。
+  // 反向控制：两次被拒期间账号服务一次都没被调用。
   assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [])
 
-  const ok = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
+  // 零表单一键认证：缺省 region 自动走 cn 官方认证入口
+  const defaultStart = await call(handler, 'POST', '/dsh-bazaar/accounts/action', {
     action: 'start',
-    region: 'global',
   })
-  assert.equal(ok.status, 200)
-  assert.equal(ok.body.ok, true)
-  assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [['accounts.start', 'global']])
+  assert.equal(defaultStart.status, 200)
+  assert.equal(defaultStart.body.ok, true)
+  assert.equal(defaultStart.body.region, 'cn')
+  assert.deepEqual(calls.filter((entry) => entry[0] === 'accounts.start'), [['accounts.start', 'cn']])
 })
 
 test('SessionManager.clear({ keepActive: true }) 退出专家但保留会话活跃来源（含默认清空反向控制）', async () => {

@@ -6,7 +6,6 @@ import {
   accountIdOf,
   createAccountStore,
   describeAccount,
-  importFromVault,
   normalizeExpiry,
 } from '../lib/wb-vault.js'
 
@@ -31,7 +30,6 @@ test('normalizeExpiry treats values below 1e12 as seconds', () => {
   assert.equal(normalizeExpiry(1_700_000_000), 1_700_000_000_000)
   assert.equal(normalizeExpiry(1_700_000_000_500), 1_700_000_000_500)
   assert.equal(normalizeExpiry('1700000000'), 1_700_000_000_000)
-  // 0 / 负数 / 垃圾一律当"没有到期时间"，而不是当成 1970 年已经过期。
   assert.equal(normalizeExpiry(0), 0)
   assert.equal(normalizeExpiry(-5), 0)
   assert.equal(normalizeExpiry('nope'), 0)
@@ -42,9 +40,7 @@ test('accountIdOf hashes the uid so a directory listing cannot leak it', () => {
   const id = accountIdOf('uid-demo')
   assert.match(id, /^[0-9a-f]{24}$/)
   assert.equal(id.includes('uid-demo'), false)
-  // 稳定：同一个 uid 每次都得到同一个文件名，重登才是"覆盖"而不是"多一条"。
   assert.equal(accountIdOf('uid-demo'), id)
-  // 没有 uid 时不能撞车：随机值，两次不同。
   assert.notEqual(accountIdOf(''), accountIdOf(''))
   assert.match(accountIdOf(undefined), /^[0-9a-f]{24}$/)
 })
@@ -54,7 +50,12 @@ test('describeAccount never exposes a token', () => {
     accountId: 'a1',
     region: 'cn',
     account: { uid: 'uid-demo', nickname: '不等时间', uin: '123' },
-    auth: { accessToken: 'tok-secret', refreshToken: 'ref-secret', expiresAt: Math.floor((Date.now() + HOUR) / 1000), domain: 'www.codebuddy.cn' },
+    auth: {
+      accessToken: 'tok-secret',
+      refreshToken: 'ref-secret',
+      expiresAt: Math.floor((Date.now() + HOUR) / 1000),
+      domain: 'www.codebuddy.cn',
+    },
   })
   const text = JSON.stringify(view)
   assert.equal(text.includes('tok-secret'), false)
@@ -67,30 +68,38 @@ test('describeAccount never exposes a token', () => {
 
 test('describeAccount calls an expired token usable when the refresh token still works', () => {
   const now = 1_700_000_000_000
-  const view = describeAccount({
-    accountId: 'a1',
-    account: { uid: 'u' },
-    auth: {
-      accessToken: 'tok',
-      refreshToken: 'ref',
-      expiresAt: Math.floor((now - HOUR) / 1000),
-      refreshExpiresAt: Math.floor((now + HOUR) / 1000),
+  const view = describeAccount(
+    {
+      accountId: 'a1',
+      account: { uid: 'u' },
+      auth: {
+        accessToken: 'tok',
+        refreshToken: 'ref',
+        expiresAt: Math.floor((now - HOUR) / 1000),
+        refreshExpiresAt: Math.floor((now + HOUR) / 1000),
+      },
     },
-  }, now)
+    now,
+  )
   assert.equal(view.expired, true)
   assert.equal(view.refreshExpired, false)
-  // 过期的 access + 还有效的 refresh 仍然算"能用"——调用方会先刷新。
   assert.equal(view.usable, true)
 })
 
 test('describeAccount refuses to call a tokenless record usable', () => {
-  const view = describeAccount({ accountId: 'a1', account: {}, auth: { refreshToken: 'ref' } }, Date.now())
+  const view = describeAccount(
+    { accountId: 'a1', account: {}, auth: { refreshToken: 'ref' } },
+    Date.now(),
+  )
   assert.equal(view.hasToken, false)
   assert.equal(view.usable, false)
 })
 
-test('createAccountStore requires a dir or a dataDir', () => {
+test('createAccountStore requires a dir or a dataDir and defaults to providers/<id>/accounts', async () => {
   assert.throws(() => createAccountStore({}), /requires a dir or a dataDir/)
+  const dataDir = await tempDir()
+  const store = createAccountStore({ dataDir, providerId: 'workbuddy' })
+  assert.equal(store.root, path.join(dataDir, 'providers', 'workbuddy', 'accounts'))
 })
 
 test('createAccountStore saves a credential with private permissions', async () => {
@@ -102,7 +111,6 @@ test('createAccountStore saves a credential with private permissions', async () 
   assert.equal(saved.nickname, '不等时间')
   assert.equal(saved.region, 'cn')
   assert.equal(saved.usable, true)
-  // 落盘位置：<dir>/<region>/<accountId>.json，文件名不含 uid。
   const file = path.join(dir, 'cn', `${saved.accountId}.json`)
   const stat = await fs.stat(file)
   const record = JSON.parse(await fs.readFile(file, 'utf8'))
@@ -111,7 +119,6 @@ test('createAccountStore saves a credential with private permissions', async () 
   assert.equal(record.auth.accessToken, 'tok-demo')
   assert.equal(typeof record.refreshedAtMs, 'number')
   assert.equal('file' in record, false)
-  // Windows 上 mode 位不可靠，只在 POSIX 上断言"至少不是所有人可读"。
   if (process.platform !== 'win32') assert.equal(stat.mode & 0o077, 0)
 })
 
@@ -127,46 +134,58 @@ test('createAccountStore reuses the same file when the same uid signs in again',
   assert.equal(resolved.token, 'tok-new')
 })
 
-test('createAccountStore lists usable accounts first and hides expired ones by default', async () => {
+test('createAccountStore enforces single-credential replacement across uids and regions', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
-  await store.save(credential({ uid: 'uid-old', nickname: '旧', expiresAtMs: Date.now() - HOUR, refreshToken: '', refreshExpiresAtMs: 0 }))
-  await store.save(credential({ uid: 'uid-new', nickname: '新', expiresAtMs: Date.now() + HOUR * 2 }))
-  await store.save(credential({ uid: 'uid-global', nickname: '国际', region: 'global', domain: 'www.workbuddy.ai', expiresAtMs: Date.now() + HOUR }))
+  const first = await store.save(credential({ uid: 'uid-old', nickname: '旧账号', accessToken: 'tok-1' }))
+  // 反向控制：保存第一条后磁盘真有该文件
+  assert.equal((await store.all()).length, 1)
+  assert.equal((await fs.readdir(path.join(dir, 'cn'))).includes(`${first.accountId}.json`), true)
 
-  const listed = await store.list()
-  assert.deepEqual(listed.map(item => item.nickname), ['新', '国际'])
-  // all() 含过期项：先按区域（cn 在 global 前），区域内按 expiresAt 倒序。
+  // 保存第二个同区域不同 uid 账号：自动清除第一条文件，只剩唯一凭证
+  const second = await store.save(credential({ uid: 'uid-new', nickname: '新账号', accessToken: 'tok-2' }))
+  assert.deepEqual(await fs.readdir(path.join(dir, 'cn')), [`${second.accountId}.json`])
+  assert.equal((await store.all()).length, 1)
+  assert.equal((await store.resolve({})).token, 'tok-2')
+
+  // 再保存一个跨区域凭证：cn 目录下的旧文件同样被清理，全库始终唯一
+  const third = await store.save(
+    credential({ uid: 'uid-global', nickname: '国际', region: 'global', domain: 'www.workbuddy.ai', accessToken: 'tok-3' }),
+  )
+  assert.deepEqual(await fs.readdir(path.join(dir, 'cn')), [])
+  assert.deepEqual(await fs.readdir(path.join(dir, 'global')), [`${third.accountId}.json`])
   const all = await store.all()
-  assert.equal(all.length, 3)
-  assert.deepEqual(all.map(item => item.nickname), ['新', '旧', '国际'])
+  assert.equal(all.length, 1)
+  assert.equal(all[0].accountId, third.accountId)
+  assert.equal((await store.resolve({})).token, 'tok-3')
 })
 
-test('createAccountStore resolves by region and prefers the latest expiry', async () => {
+test('createAccountStore resolves matching region and rejects non-matching explicit region', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
-  await store.save(credential({ uid: 'u1', accessToken: 'tok-soon', expiresAtMs: Date.now() + 60_000 }))
-  await store.save(credential({ uid: 'u2', accessToken: 'tok-late', expiresAtMs: Date.now() + HOUR * 5 }))
-  await store.save(credential({ uid: 'u3', accessToken: 'tok-global', region: 'global', domain: 'www.workbuddy.ai' }))
+  await store.save(credential({ uid: 'u1', accessToken: 'tok-cn', region: 'cn', domain: 'www.codebuddy.cn' }))
 
   const cn = await store.resolve({ region: 'cn' })
-  assert.equal(cn.token, 'tok-late')
+  assert.equal(cn.token, 'tok-cn')
   assert.equal(cn.region, 'cn')
   assert.equal(cn.base, 'https://www.codebuddy.cn')
-
-  const global = await store.resolve({ region: 'global' })
-  assert.equal(global.token, 'tok-global')
-  assert.equal(global.base, 'https://www.workbuddy.ai')
-
-  const any = await store.resolve({})
-  assert.equal(any.token, 'tok-late')
-  assert.equal((await store.resolve({ region: 'nope' })), undefined)
+  assert.equal((await store.resolve({})).token, 'tok-cn')
+  assert.equal(await store.resolve({ region: 'global' }), undefined)
+  assert.equal(await store.resolve({ region: 'nope' }), undefined)
 })
 
 test('createAccountStore can resolve an expired account only when asked', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
-  await store.save(credential({ accessToken: 'tok-dead', expiresAtMs: Date.now() - HOUR, refreshToken: '', refreshExpiresAtMs: 0 }))
+  await store.save(
+    credential({
+      accessToken: 'tok-dead',
+      expiresAtMs: Date.now() - HOUR,
+      refreshToken: '',
+      refreshExpiresAtMs: 0,
+    }),
+  )
+  assert.deepEqual(await store.list(), [])
   assert.equal(await store.resolve({}), undefined)
   const forced = await store.resolve({ includeExpired: true })
   assert.equal(forced.token, 'tok-dead')
@@ -176,10 +195,12 @@ test('createAccountStore updates only the fields it is given', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
   const saved = await store.save(credential())
-  await store.update(saved.accountId, { accessToken: 'tok-rotated', expiresAtMs: Date.now() + HOUR * 3 })
+  await store.update(saved.accountId, {
+    accessToken: 'tok-rotated',
+    expiresAtMs: Date.now() + HOUR * 3,
+  })
   const raw = await store.raw(saved.accountId)
   assert.equal(raw.auth.accessToken, 'tok-rotated')
-  // 没给的字段必须原地保留，否则一次刷新就把 refresh token 抹掉了。
   assert.equal(raw.auth.refreshToken, 'ref-demo')
   assert.equal(raw.account.nickname, '不等时间')
   assert.equal(raw.auth.domain, 'www.codebuddy.cn')
@@ -188,29 +209,37 @@ test('createAccountStore updates only the fields it is given', async () => {
 test('createAccountStore refuses to update an unknown account', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
-  await assert.rejects(() => store.update('missing', { accessToken: 'x' }), /account not found: missing/)
+  await assert.rejects(
+    () => store.update('missing', { accessToken: 'x' }),
+    /account not found: missing/,
+  )
 })
 
-test('createAccountStore removes an account and reports whether it existed', async () => {
+test('createAccountStore removes an account by id or wildcard and invalidates cache', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
   const saved = await store.save(credential())
   assert.equal(await store.remove(saved.accountId), true)
   assert.equal(await store.remove(saved.accountId), false)
   assert.deepEqual(await store.all(), [])
-  // 移除后 resolve 不能还返回旧值（缓存必须失效）。
   assert.equal(await store.resolve({}), undefined)
+
+  // 通配 '*' 一键清空唯一凭证
+  await store.save(credential({ uid: 'uid-2', accessToken: 'tok-2' }))
+  assert.equal(await store.remove('*'), true)
+  assert.equal(await store.remove('*'), false)
+  assert.deepEqual(await store.all(), [])
 })
 
-test('createAccountStore reports a summary without filesystem details', async () => {
+test('createAccountStore reports a single-credential summary without leaking tokens', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
   await store.save(credential({ uid: 'u1' }))
   await store.save(credential({ uid: 'u2', region: 'global', domain: 'www.workbuddy.ai' }))
   const summary = await store.summary()
-  assert.equal(summary.count, 2)
-  assert.equal(summary.usableCount, 2)
-  assert.deepEqual(summary.regions, ['cn', 'global'])
+  assert.equal(summary.count, 1)
+  assert.equal(summary.usableCount, 1)
+  assert.deepEqual(summary.regions, ['global'])
   assert.equal(summary.dir, dir)
   assert.equal(JSON.stringify(summary).includes('tok-demo'), false)
 })
@@ -220,13 +249,15 @@ test('createAccountStore skips dotfiles and unreadable records instead of failin
   const store = createAccountStore({ dir })
   await store.save(credential())
   await fs.writeFile(path.join(dir, 'cn', 'broken.json'), '{not json')
-  await fs.writeFile(path.join(dir, 'cn', '.hidden.json'), JSON.stringify({ accountId: 'x', auth: { accessToken: 'tok' } }))
+  await fs.writeFile(
+    path.join(dir, 'cn', '.hidden.json'),
+    JSON.stringify({ accountId: 'x', auth: { accessToken: 'tok' } }),
+  )
   const all = await store.all()
   assert.equal(all.length, 1)
 })
 
-test('createAccountStore serialises concurrent saves of the same uid', async () => {
-  // 两个并发写同一账号：锁要保证最后落盘的是一条完整记录，不是两次 rename 交错。
+test('createAccountStore serialises concurrent saves with credential lock', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir })
   const results = await Promise.all([
@@ -234,20 +265,19 @@ test('createAccountStore serialises concurrent saves of the same uid', async () 
     store.save(credential({ accessToken: 'tok-b' })),
     store.save(credential({ accessToken: 'tok-c' })),
   ])
-  assert.equal(new Set(results.map(item => item.accountId)).size, 1)
+  assert.equal(new Set(results.map((item) => item.accountId)).size, 1)
   const raw = await store.raw(results[0].accountId)
   assert.equal(['tok-a', 'tok-b', 'tok-c'].includes(raw.auth.accessToken), true)
   const names = await fs.readdir(path.join(dir, 'cn'))
-  assert.equal(names.filter(name => name.startsWith('.lock')).length, 0)
-  assert.equal(names.filter(name => name.includes('.tmp-')).length, 0)
+  assert.equal(names.filter((name) => name.startsWith('.lock')).length, 0)
+  assert.equal(names.filter((name) => name.includes('.tmp-')).length, 0)
 })
 
 test('createAccountStore breaks a stale lock instead of hanging forever', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir, lockTimeoutMs: 400, lockStaleMs: 1 })
-  const lockDir = path.join(dir, '.lock', 'cn-stale')
+  const lockDir = path.join(dir, '.lock', 'credential')
   await fs.mkdir(lockDir, { recursive: true })
-  // 把锁目录的 mtime 推到很久以前，模拟上次进程崩在锁里。
   const old = new Date(Date.now() - 60_000)
   await fs.utimes(lockDir, old, old)
   const saved = await store.save(credential())
@@ -257,66 +287,10 @@ test('createAccountStore breaks a stale lock instead of hanging forever', async 
 test('createAccountStore fails loudly when a live lock never clears', async () => {
   const dir = await tempDir()
   const store = createAccountStore({ dir, lockTimeoutMs: 120, lockStaleMs: 60_000 })
-  // 锁名是 `<region>-<accountId>`，accountId 是 uid 的哈希——不是 uid 原文。
-  const lockDir = path.join(dir, '.lock', `cn-${accountIdOf('uid-demo')}`)
+  const lockDir = path.join(dir, '.lock', 'credential')
   await fs.mkdir(lockDir, { recursive: true })
-  await assert.rejects(() => store.save(credential()), /another account operation is still running/)
-})
-
-test('importFromVault copies a dsh-connect-workbuddy vault without touching it', async () => {
-  const vault = await tempDir('legacy-vault-')
-  await fs.mkdir(path.join(vault, 'cn'), { recursive: true })
-  await fs.mkdir(path.join(vault, 'global'), { recursive: true })
-  const cnFile = path.join(vault, 'cn', 'a.json')
-  const cnBody = JSON.stringify({
-    version: 1,
-    accountId: 'account-1',
-    account: { uid: 'uid-legacy', nickname: '旧账号', uin: '111' },
-    auth: { accessToken: 'tok-legacy', refreshToken: 'ref-legacy', expiresAt: Math.floor((Date.now() + HOUR) / 1000), domain: 'www.workbuddy.cn' },
-  })
-  await fs.writeFile(cnFile, cnBody)
-  await fs.writeFile(path.join(vault, 'global', 'b.json'), JSON.stringify({ account: {}, auth: {} }))
-
-  const dir = await tempDir()
-  const store = createAccountStore({ dir })
-  const outcome = await importFromVault({ vaultDir: vault, store })
-
-  assert.equal(outcome.imported.length, 1)
-  assert.equal(outcome.imported[0].nickname, '旧账号')
-  assert.deepEqual(outcome.skipped.map(item => item.reason), ['no account.uid'])
-  assert.deepEqual(outcome.errors, [])
-  // 源文件必须一个字节都没变——那边还有它自己的锁与日志。
-  assert.equal(await fs.readFile(cnFile, 'utf8'), cnBody)
-  // 导入后就能从本插件的库解析出 token。
-  const resolved = await store.resolve({})
-  assert.equal(resolved.token, 'tok-legacy')
-  assert.equal(resolved.nickname, '旧账号')
-})
-
-test('importFromVault records parse errors and keeps going', async () => {
-  const vault = await tempDir('legacy-bad-')
-  await fs.mkdir(path.join(vault, 'cn'), { recursive: true })
-  await fs.writeFile(path.join(vault, 'cn', 'broken.json'), '{not json')
-  await fs.writeFile(path.join(vault, 'cn', 'no-token.json'), JSON.stringify({ account: { uid: 'u' }, auth: {} }))
-  const dir = await tempDir()
-  const store = createAccountStore({ dir })
-  const outcome = await importFromVault({ vaultDir: vault, store })
-  assert.equal(outcome.imported.length, 0)
-  assert.equal(outcome.errors.length, 1)
-  assert.match(outcome.errors[0].error, /JSON/)
-  assert.deepEqual(outcome.skipped.map(item => item.reason), ['no auth.accessToken'])
-})
-
-test('importFromVault tolerates a missing vault directory', async () => {
-  const dir = await tempDir()
-  const store = createAccountStore({ dir })
-  const outcome = await importFromVault({ vaultDir: path.join(dir, 'nope'), store })
-  assert.deepEqual(outcome, { imported: [], skipped: [], errors: [] })
-})
-
-test('importFromVault validates its arguments', async () => {
-  const dir = await tempDir()
-  const store = createAccountStore({ dir })
-  await assert.rejects(() => importFromVault({ store }), /requires a vaultDir/)
-  await assert.rejects(() => importFromVault({ vaultDir: dir }), /requires a store/)
+  await assert.rejects(
+    () => store.save(credential()),
+    /another account operation is still running/,
+  )
 })

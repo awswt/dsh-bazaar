@@ -116,6 +116,20 @@ function createBazaar(config) {
   const expertsGroup = (providerId, query, categoryId) => {
     // 平铺入口跨库搜索时不带 provider，夹具回落到第一家，等价于真实服务端的全库遍历。
     const provider = state.providers.find((item) => item.id === providerId) ?? state.providers[0]
+    if (state.authRequiredProviders?.has(providerId) === true) {
+      return {
+        providerId: providerId,
+        displayName: provider.displayName,
+        capabilities: provider.capabilities,
+        status: 'error',
+        code: 'BAZAAR_PORTAL_AUTH_REQUIRED',
+        message: '尚未完成 WorkBuddy 市场认证，请点击「立即登录认证」完成网页授权',
+        items: [],
+        total: 0,
+        matchedTotal: 0,
+        hasMore: false,
+      }
+    }
     if (state.failExperts.has(providerId) === true) {
       return {
         providerId: providerId,
@@ -453,7 +467,10 @@ function createBazaar(config) {
       }
       if (sub === 'accounts/action' && request.method === 'POST') {
         if (body.action === 'login') {
-          const region = body.region
+          const region =
+            body.region === undefined || body.region === null || body.region === ''
+              ? 'cn'
+              : String(body.region)
           if (region !== 'cn' && region !== 'global') {
             sendJson(response, 400, {
               ok: false,
@@ -468,10 +485,31 @@ function createBazaar(config) {
             ok: true,
             action: 'login',
             result: {
-              loginId: 'login-1',
-              verificationUri: 'http://127.0.0.1/scan',
+              loginId: 'bz_login_1',
+              verificationUri: 'https://www.codebuddy.cn/login?state=s1',
               region: region,
             },
+          })
+          return true
+        }
+        if (body.action === 'poll') {
+          state.accounts[providerId] = [
+            {
+              accountId: 'acc-own-1',
+              nickname: '自有认证账号',
+              region: 'cn',
+              expiresAt: Date.now() + 3600_000,
+              expired: false,
+              hasToken: true,
+              hasRefreshToken: true,
+              usable: true,
+            },
+          ]
+          state.authRequiredProviders?.delete(providerId)
+          sendJson(response, 200, {
+            ok: true,
+            action: 'poll',
+            result: { done: true, account: state.accounts[providerId][0] },
           })
           return true
         }
@@ -877,45 +915,50 @@ test('屏 A：清理缓存与退出登录都要二次确认，取消不执行', 
   }
 })
 
-test('屏 A：未选登录区域时界面拦住且一个请求都不发；服务端同样拒绝缺 region', async () => {
-  const service = await startBazaar()
+test('屏 A 与屏 B：零表单单凭证认证，且未认证时上浮面板与完整工作台均可就地一键完成认证并自动刷出列表', async () => {
+  const service = await startBazaar({
+    initialized: false,
+    authRequiredProviders: new Set(['workbuddy']),
+  })
   try {
-    const ui = await bootScreen(service, 'settings')
-    const select = ui.find('data-region', 'workbuddy')
-    assert.notEqual(select, null)
-    assert.equal(select.props.required, true, '区域必须标 required')
-    assert.equal(select.props['aria-required'], 'true')
-    assert.equal(select.props.value, '', '默认不预选')
-    assert.equal(ui.texts().includes('必选'), true, '要有可见的「必选」标记')
+    // 1. 屏 A 设置页：无区域下拉框，直接显示「未认证」+「立即登录认证」
+    const settingsUi = await bootScreen(service, 'settings')
+    assert.equal(settingsUi.find('data-region', 'workbuddy'), null, '不再渲染区域必选下拉框')
+    assert.equal(settingsUi.texts().includes('未认证'), true)
+    const settingsLoginBtn = settingsUi.find('data-login', 'workbuddy')
+    assert.notEqual(settingsLoginBtn, null)
+    assert.equal(settingsLoginBtn.props.disabled, false)
 
-    await ui.click('data-login', 'workbuddy')
-    await ui.settle()
-    assert.equal(requestsTo(service, '/accounts/action').length, 0, '未选区域时不得发出登录请求')
-    const afterSelect = ui.find('data-region', 'workbuddy')
-    assert.equal(afterSelect.props['aria-invalid'], 'true', '字段级错误要落在控件上')
-    assert.equal(
-      typeof afterSelect.props['aria-describedby'],
-      'string',
-      '错误说明要用 aria-describedby 锚定',
-    )
-    const described = ui.tree.find(
-      (node) => node.props.id === afterSelect.props['aria-describedby'],
-    )
-    assert.notEqual(described, null, 'aria-describedby 指向的说明必须真的存在')
-    assert.equal(described.text.includes('尚未选择登录区域'), true, '说明要写清错在哪')
-    assert.equal(described.text.includes('BAZAAR_PARAM_INVALID'), true, '说明要写清服务端同样拒绝')
-    assert.equal(ui.texts().includes('登录区域'), true)
-
-    // 绕过界面直接提交：服务端以 BAZAAR_PARAM_INVALID 拒绝，并点名 region。
+    // 显式传非法 region 仍被服务端以 BAZAAR_PARAM_INVALID 拦截
     const bypass = await fetch(service.baseUrl + 'dsh-bazaar/providers/workbuddy/accounts/action', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'login', sessionId: 's1' }),
+      body: JSON.stringify({ providerId: 'workbuddy', action: 'login', region: 'mars' }),
     })
     const bypassBody = await bypass.json()
     assert.equal(bypass.status, 400)
     assert.equal(bypassBody.code, 'BAZAAR_PARAM_INVALID')
     assert.equal(bypassBody.field, 'region')
+
+    // 2. 屏 B 会话上浮面板：未认证时显示中文引导并提供就地「立即登录认证」，完成后自动拉出专家列表
+    const composerUi = await bootScreen(service, 'composer', { sessionId: 's-inline-auth' })
+    const expertPill = composerUi.tree.find(
+      (node) => node.props['data-kind'] === 'expert' && node.type === 'button',
+    )
+    await composerUi.harness.fire(expertPill, 'onClick', {})
+    await composerUi.settle()
+    assert.equal(composerUi.texts().includes('WorkBuddy 专家库 尚未完成市场认证'), true)
+
+    await composerUi.click('data-inline-login', 'workbuddy')
+    assert.equal(composerUi.texts().includes('等待浏览器完成认证'), true)
+    assert.equal(composerUi.texts().includes('https://www.codebuddy.cn/login?state=s1'), true)
+
+    await composerUi.click('data-inline-poll', 'workbuddy')
+    assert.equal(
+      composerUi.texts().includes('数据工程师'),
+      true,
+      '就地认证完成后自动刷新出市场条目',
+    )
   } finally {
     await service.close()
   }

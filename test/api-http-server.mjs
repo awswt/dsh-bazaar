@@ -202,7 +202,6 @@ export async function createApiServer(options = {}) {
   const connector = new WorkBuddyConnector({
     dshHome: dataDir,
     accountsDir: accountsDir,
-    vaultDir: path.join(dataDir, 'legacy-vault'),
     urlConfig: urlConfig,
     fetchImpl: offlineFetch,
   })

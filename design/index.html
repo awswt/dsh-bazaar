@@ -2754,25 +2754,25 @@
           if (state.loginPhase === 'logged' && provider.id === 'workbuddy') {
             accountHtml = `
               <div class="settings-field">
-                <div class="settings-field__label">登录状态 <span class="bz-tag" data-kind="ok">已登录</span> <span class="bz-tag" data-kind="readonly">只读</span></div>
+                <div class="settings-field__label">认证状态 <span class="bz-tag" data-kind="ok">已认证</span> <span class="bz-tag" data-kind="readonly">只读</span></div>
                 <div class="settings-field__row">
-                  <span class="bz-mono">wb_user_9f3c（国内版 codebuddy.cn）</span>
-                  <span class="bz-tag" data-kind="muted">到期 2026-12-31</span>
+                  <span class="bz-mono">单凭证独立存储（到期 2026-12-31）</span>
                 </div>
               </div>
               <div class="settings-field">
                 <div class="settings-field__label">操作</div>
                 <div class="settings-field__row">
+                  <button type="button" class="bz-btn bz-btn--sm" data-action="finish-login">刷新凭证</button>
                   <button type="button" class="bz-btn bz-btn--sm bz-btn--danger" data-action="ask-logout">退出登录</button>
                 </div>
-                <p class="settings-field__hint">退出会删除该 Provider 账号目录下的登录记录，不影响当前会话专家选择。</p>
+                <p class="settings-field__hint">市场凭证独立存储在当前 Provider 专属目录，不依赖其他插件。</p>
               </div>
             `
           } else if (state.loginPhase === 'waiting') {
             accountHtml = `
               <div class="settings-field">
-                <div class="settings-field__label">扫码授权中 <span class="bz-tag" data-kind="info">等待确认</span></div>
-                <p class="settings-field__hint">请在浏览器打开授权页并完成扫码：<code class="bz-mono">https://codebuddy.cn/login?code=bz_92f1</code></p>
+                <div class="settings-field__label">网页授权中 <span class="bz-tag" data-kind="info">等待确认</span></div>
+                <p class="settings-field__hint">已在浏览器打开授权页：<code class="bz-mono">https://www.codebuddy.cn/login?state=bz_92f1</code></p>
                 <div class="settings-field__row">
                   <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="finish-login">我已完成</button>
                   <button type="button" class="bz-btn bz-btn--sm" data-action="cancel-login">取消</button>
@@ -2780,24 +2780,15 @@
               </div>
             `
           } else {
-            const configured = provider.credential.configured
+            const configured = provider.credential.configured || provider.id === 'workbuddy'
             accountHtml = `
               <div class="settings-field">
-                <div class="settings-field__label">登录区域 <span class="bz-tag" data-kind="req">必选</span></div>
-                <div class="settings-field__row">
-                  <select class="bz-select" data-role="region-select" aria-required="true" aria-invalid="${state.regionError}">
-                    <option value="">请选择（国内版 / 国际版）</option>
-                    <option value="cn" ${state.loginRegion === 'cn' ? 'selected' : ''}>国内版（codebuddy.cn 账号体系）</option>
-                    <option value="global" ${state.loginRegion === 'global' ? 'selected' : ''}>国际版（workbuddy.ai 账号体系）</option>
-                  </select>
-                </div>
-                <p class="settings-field__hint ${state.regionError ? 'settings-field__hint--error' : ''}">
-                  ${state.regionError ? '错在哪：尚未选择登录区域。怎么改：在上方下拉里选「国内版」或「国际版」后再点登录。' : '国内版与国际版账号体系独立，默认不预选。'}
-                </p>
+                <div class="settings-field__label">认证状态 <span class="bz-tag" data-kind="empty">未认证</span></div>
+                <p class="settings-field__hint">每个 Provider 仅需完成一次网页授权即可访问在线专家与技能市场（单凭证独立存储）。</p>
               </div>
               <div class="settings-field">
                 <div class="settings-field__row">
-                  <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="start-login" ${!configured ? 'disabled' : ''}>登录</button>
+                  <button type="button" class="bz-btn bz-btn--sm bz-btn--primary" data-action="start-login" ${!configured ? 'disabled' : ''}>立即登录认证</button>
                   ${!configured ? `<span class="bz-tag" data-kind="disabled">禁用：凭据未配置</span>` : ''}
                 </div>
               </div>
@@ -3217,12 +3208,6 @@
               return
             }
             if (action === 'start-login') {
-              if (state.loginRegion !== 'cn' && state.loginRegion !== 'global') {
-                state.regionError = true
-                showToast('请先选择登录区域（国内版 / 国际版）', 'error')
-                render()
-                return
-              }
               state.regionError = false
               state.loginPhase = 'waiting'
               render()

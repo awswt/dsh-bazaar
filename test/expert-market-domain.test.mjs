@@ -529,3 +529,61 @@ test('内置库在市场上查不到时回落到本地插件目录，第三方�
     },
   )
 })
+
+test('WorkBuddy 未认证或凭证失效时直接透出鉴权错误（绝不回落 COS 快照），非鉴权网络故障仍回落快照', async () => {
+  let snapshotHits = 0
+  const market = {
+    async listExperts() {
+      snapshotHits += 1
+      return { items: [{ id: 'snap-1', displayName: '快照专家' }], total: 1 }
+    },
+    async getExpert(id) {
+      snapshotHits += 1
+      return { id, displayName: '快照专家' }
+    },
+  }
+  let portalMode = 'auth-missing'
+  const portal = {
+    async listExperts() {
+      if (portalMode === 'auth-missing') {
+        const err = new Error('尚未完成 WorkBuddy 市场认证，请点击「立即登录认证」完成网页授权')
+        err.code = 'BAZAAR_PORTAL_AUTH_REQUIRED'
+        throw err
+      }
+      throw new Error('ECONNRESET')
+    },
+    async getExpert() {
+      const err = new Error('WorkBuddy 市场认证凭证已失效（HTTP 401），请重新登录认证')
+      err.code = 'BAZAAR_MARKET_AUTH_REQUIRED'
+      throw err
+    },
+  }
+
+  const w = wiring()
+  await w.registry.register(
+    createWorkbuddyProvider({
+      config: { dataDir: tempDirSync('bz-wb-auth-guard-'), marketMode: 'portal' },
+      portal,
+      market,
+    }),
+  )
+  await w.session.writeActive('s1', ['workbuddy'])
+
+  // 1. 鉴权缺失：必须报 BAZAAR_PORTAL_AUTH_REQUIRED，且一次都不碰 COS 快照
+  const unauthed = await w.views.listExperts({ sessionId: 's1' })
+  assert.equal(unauthed.groups[0].status, 'error')
+  assert.equal(unauthed.groups[0].code, 'BAZAAR_PORTAL_AUTH_REQUIRED')
+  assert.equal(snapshotHits, 0, '未认证时严禁静默回落公开快照混淆登录状态')
+
+  const unauthedDetail = await w.views.getExpert({ providerId: 'workbuddy', id: 'ex-1' })
+  assert.equal(unauthedDetail.ok, false)
+  assert.equal(unauthedDetail.code, 'BAZAAR_MARKET_AUTH_REQUIRED')
+  assert.equal(snapshotHits, 0)
+
+  // 2. 反向控制：普通网络故障仍可回落公开快照保障可用性
+  portalMode = 'network-down'
+  const fallback = await w.views.listExperts({ sessionId: 's1' })
+  assert.equal(fallback.groups[0].status, 'ok')
+  assert.equal(fallback.groups[0].items.length, 1)
+  assert.equal(snapshotHits, 1)
+})

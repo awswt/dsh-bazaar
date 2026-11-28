@@ -98,14 +98,15 @@ function fakeAccounts(options = {}) {
     },
     async action(action, params) {
       calls.push({ action, params })
-      if (action === 'login' && params.region === undefined) {
+      const region = params.region === undefined || params.region === '' ? 'cn' : params.region
+      if (action === 'login' && region !== 'cn' && region !== 'global') {
         return {
           code: CODES.PARAM_INVALID,
           field: 'region',
-          error: '登录区域必选：region 必须是 cn 或 global，收到 未提供',
+          error: '认证区域参数非法：region 必须是 cn 或 global，收到 ' + String(params.region),
         }
       }
-      return { ok: true, region: params.region }
+      return { ok: true, loginId: 'bz_demo', region }
     },
   }
 }
@@ -213,21 +214,30 @@ test('反向控制：账号服务回空清单时分组条目就是空的（投�
   }
 })
 
-test('账号动作的内层失败折成顶层失败信封，路由给 400 而不是 200 嵌套 result', async () => {
+test('账号动作的内层失败折成顶层失败信封，路由给 400 而不是 200 嵌套 result；缺省 region 直接一键发起', async () => {
   const setup = await harness()
   try {
-    const response = await call(
+    const bad = await call(
+      setup.server,
+      fakeRequest('POST', actionPath, { providerId: 'workbuddy', action: 'login', region: 'mars' }),
+    )
+    assert.equal(bad.statusCode, 400, bad.body)
+    const body = bad.json()
+    assert.equal(body.ok, false, '内层带 code 的结果必须折成信封：' + bad.body)
+    assert.equal(body.code, CODES.PARAM_INVALID)
+    assert.equal(body.field, 'region')
+    assert.ok(body.message.includes('mars'), body.message)
+    assert.equal(body.result, undefined, '折叠后不得再包一层 result')
+    assert.equal(body.action, undefined)
+
+    const okRes = await call(
       setup.server,
       fakeRequest('POST', actionPath, { providerId: 'workbuddy', action: 'login' }),
     )
-    assert.equal(response.statusCode, 400, response.body)
-    const body = response.json()
-    assert.equal(body.ok, false, '内层带 code 的结果必须折成信封：' + response.body)
-    assert.equal(body.code, CODES.PARAM_INVALID)
-    assert.equal(body.field, 'region')
-    assert.ok(body.message.includes('登录区域必选'), body.message)
-    assert.equal(body.result, undefined, '折叠后不得再包一层 result')
-    assert.equal(body.action, undefined)
+    assert.equal(okRes.statusCode, 200, okRes.body)
+    const okBody = okRes.json()
+    assert.equal(okBody.ok, true)
+    assert.equal(okBody.result.region, 'cn')
   } finally {
     setup.cleanup()
   }

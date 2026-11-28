@@ -10,9 +10,6 @@
     }
   },
   "lib/connector.js": {
-    "no-useless-assignment": {
-      "count": 3
-    },
     "preserve-caught-error": {
       "count": 1
     }
@@ -36,9 +33,6 @@
     }
   },
   "lib/wb-vault.js": {
-    "no-unused-vars": {
-      "count": 1
-    },
     "preserve-caught-error": {
       "count": 1
     }
@@ -67,11 +61,6 @@
   "scripts/release.mjs": {
     "no-console": {
       "count": 30
-    }
-  },
-  "test/connector-layered.test.mjs": {
-    "no-unused-vars": {
-      "count": 1
     }
   },
   "test/core.test.mjs": {

@@ -61,29 +61,39 @@ test('resolveAuth reports a missing connector token as BAZAAR_AUTH_MISSING witho
   )
 })
 
-test('WorkBuddyConnector reads the vault without leaking tokens in status', async () => {
+test('WorkBuddyConnector isolates from external vault and never leaks tokens in status', async () => {
   const home = await tempDir()
-  const cn = path.join(home, 'workbuddy-vault', 'cn')
-  const global = path.join(home, 'workbuddy-vault', 'global')
-  await fs.mkdir(cn, { recursive: true })
-  await fs.mkdir(global, { recursive: true })
-  await fs.writeFile(path.join(cn, 'a.json'), JSON.stringify({
-    accountId: 'account-cn-1',
-    account: { nickname: '测试账号', uid: '1' },
-    auth: { accessToken: FAKE_TOKEN, expiresAt: Math.floor((Date.now() + 3600_000) / 1000) },
-  }))
-  await fs.writeFile(path.join(global, 'b.json'), JSON.stringify({
-    accountId: 'account-global-1',
-    account: { nickname: 'expired', uid: '2' },
-    auth: { accessToken: 'expired-token-000000', expiresAt: Math.floor((Date.now() - 1000) / 1000) },
-  }))
+  const externalCn = path.join(home, 'workbuddy-vault', 'cn')
+  await fs.mkdir(externalCn, { recursive: true })
+  await fs.writeFile(
+    path.join(externalCn, 'ext.json'),
+    JSON.stringify({
+      accountId: 'account-ext-1',
+      account: { nickname: '外部账号', uid: 'ext-1' },
+      auth: { accessToken: 'external-token-999999', expiresAt: Math.floor((Date.now() + 3600_000) / 1000) },
+    }),
+  )
 
   const connector = new WorkBuddyConnector({ dshHome: home })
+  // 未在本插件登录前：绝不读取外部 workbuddy-vault
+  assert.equal((await connector.status()).accountCount, 0)
+  assert.equal(await connector.resolveToken(), undefined)
+
+  await connector.saveAccount({
+    uid: 'own-uid-1',
+    nickname: '测试账号',
+    region: 'cn',
+    accessToken: FAKE_TOKEN,
+    refreshToken: 'ref-secret-000000',
+    expiresAtMs: Date.now() + 3600_000,
+    domain: 'www.codebuddy.cn',
+  })
   const status = await connector.status()
-  assert.equal(status.accountCount, 2)
+  assert.equal(status.accountCount, 1)
   assert.equal(status.usableAccountCount, 1)
   assert.equal(JSON.stringify(status).includes(FAKE_TOKEN), false)
-  assert.equal(JSON.stringify(status).includes('expired-token-000000'), false)
+  assert.equal(JSON.stringify(status).includes('ref-secret-000000'), false)
+  assert.equal(JSON.stringify(status).includes('external-token-999999'), false)
 
   const hit = await connector.resolveToken()
   assert.equal(hit.token, FAKE_TOKEN)
